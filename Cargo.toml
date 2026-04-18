@@ -1,0 +1,28 @@
+[package]
+name = "mafsmith"
+version = "0.1.0"
+edition = "2021"
+description = "Fast, self-contained VCF to MAF converter with embedded annotation"
+license = "Apache-2.0"
+repository = "https://github.com/Sage-Bionetworks/mafsmith"
+
+[[bin]]
+name = "mafsmith"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+thiserror = "1"
+noodles = { version = "0", features = ["vcf", "fasta", "bgzf"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }
+futures-util = "0.3"
+indicatif = { version = "0.17", features = ["tokio"] }
+flate2 = "1"
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+indexmap = "2"
