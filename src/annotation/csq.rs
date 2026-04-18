@@ -70,8 +70,15 @@ impl CsqFormat {
         let canonical_str = get("CANONICAL");
         let canonical = canonical_str == "YES";
 
-        let tsl = get("TSL");
-        let transcript_length: u64 = tsl.parse().unwrap_or(0);
+        // Transcript length: use the denominator from cDNA_position (e.g. "1480/5971" → 5971).
+        // This matches vcf2maf.pl which uses cds_length from the cDNA_position total for
+        // tiebreaking when multiple transcripts have the same biotype and consequence severity.
+        let cdna_pos = get("cDNA_position");
+        let transcript_length: u64 = cdna_pos
+            .split('/')
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
 
         let consequences: Vec<String> = get("Consequence")
             .split('&')

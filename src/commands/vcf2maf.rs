@@ -1,13 +1,13 @@
 use crate::{
     annotation::{
-        consequence::{end_position, so_to_variant_classification, variant_type},
+        consequence::{so_to_variant_classification, variant_type},
         csq::{shorten_hgvsp, CsqFormat},
         depth::extract_depth,
         transcript::select_transcript,
     },
     cli::Vcf2mafArgs,
     maf::{record::MafRecord, writer::MafWriter},
-    vcf::VcfReader,
+    vcf::{normalization::{maf_positions, normalize}, VcfReader},
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -92,7 +92,11 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             None => return Ok(()),
         };
 
-        // Allele depths
+        // Normalize alleles: strip shared prefix/suffix, compute MAF positions.
+        let norm = normalize(rec.pos, &rec.ref_allele, &rec.alt_allele);
+        let (start_pos, end_pos) = maf_positions(&norm);
+
+        // Allele depths (use original VCF alleles for the format-field lookup)
         let fk: Vec<&str> = rec.format_keys.iter().map(|s| s.as_str()).collect();
         let tumor_depth = tumor_col
             .as_deref()
@@ -108,9 +112,8 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
         let csq_refs: Vec<&str> = transcript.consequences.iter().map(|s| s.as_str()).collect();
         let var_class =
-            so_to_variant_classification(&csq_refs, &rec.ref_allele, &rec.alt_allele);
-        let var_type = variant_type(&rec.ref_allele, &rec.alt_allele);
-        let end_pos = end_position(rec.pos, &rec.ref_allele, &rec.alt_allele);
+            so_to_variant_classification(&csq_refs, &norm.ref_allele, &norm.alt_allele);
+        let var_type = variant_type(&norm.ref_allele, &norm.alt_allele);
 
         // dbSNP: pull from Existing_variation or ID column
         let dbsnp = if rec.id != "." {
@@ -154,20 +157,20 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             center: args.maf_center.clone(),
             ncbi_build: genome_str.to_owned(),
             chromosome: rec.chrom.clone(),
-            start_position: rec.pos,
+            start_position: start_pos,
             end_position: end_pos,
             strand: String::from("+"),
             variant_classification: var_class.to_owned(),
             variant_type: var_type.to_owned(),
-            reference_allele: rec.ref_allele.clone(),
-            tumor_seq_allele1: rec.ref_allele.clone(),
-            tumor_seq_allele2: rec.alt_allele.clone(),
+            reference_allele: norm.ref_allele.clone(),
+            tumor_seq_allele1: norm.ref_allele.clone(),
+            tumor_seq_allele2: norm.alt_allele.clone(),
             dbsnp_rs: dbsnp,
             dbsnp_val_status: String::new(),
             tumor_sample_barcode: tumor_barcode.to_owned(),
             matched_norm_sample_barcode: normal_barcode.to_owned(),
-            match_norm_seq_allele1: rec.ref_allele.clone(),
-            match_norm_seq_allele2: rec.ref_allele.clone(),
+            match_norm_seq_allele1: norm.ref_allele.clone(),
+            match_norm_seq_allele2: norm.ref_allele.clone(),
             mutation_status: String::from("Somatic"),
             hgvsc: transcript.hgvsc.clone(),
             hgvsp: transcript.hgvsp.clone(),

@@ -44,16 +44,21 @@ pub fn extract_depth(
     let dp = get("DP").and_then(|v| v.parse::<u32>().ok());
 
     // 1. Standard AD field: ref,alt[,alt2,...]
+    //    Values may be "." (unknown) — handle per-field, not by filtering the whole split.
     if let Some(ad_str) = get("AD") {
-        let parts: Vec<u32> = ad_str.split(',').filter_map(|v| v.parse().ok()).collect();
-        if parts.len() >= 2 {
-            let ref_count = parts[0];
-            let alt_count = parts[1];
-            return AlleleDepth {
-                ref_count: Some(ref_count),
-                alt_count: Some(alt_count),
-                total_depth: dp.or(Some(parts.iter().sum())),
-            };
+        let raw: Vec<&str> = ad_str.split(',').collect();
+        if raw.len() >= 2 {
+            let ref_count: Option<u32> = raw[0].parse().ok();
+            let alt_count: Option<u32> = raw[1].parse().ok();
+            // Accept even if one side is unknown ("."), as long as we parsed something
+            if ref_count.is_some() || alt_count.is_some() {
+                let sum = ref_count.unwrap_or(0) + alt_count.unwrap_or(0);
+                return AlleleDepth {
+                    ref_count,
+                    alt_count,
+                    total_depth: dp.or(if sum > 0 { Some(sum) } else { None }),
+                };
+            }
         }
     }
 

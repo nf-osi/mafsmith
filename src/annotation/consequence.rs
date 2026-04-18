@@ -124,19 +124,6 @@ pub fn variant_type(ref_allele: &str, alt_allele: &str) -> &'static str {
     }
 }
 
-/// MAF end position: SNP/DNP/TNP use start + ref_len - 1; INS uses start - 1 .. start;
-/// DEL uses start .. start + ref_len - 2 (MAF is 1-based, closed).
-pub fn end_position(start: u64, ref_allele: &str, alt_allele: &str) -> u64 {
-    let ref_len = ref_allele.len() as u64;
-    let alt_len = alt_allele.len() as u64;
-    if alt_len > ref_len {
-        // insertion: end == start (GDC convention)
-        start
-    } else {
-        start + ref_len - 1
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,6 +6,10 @@ description = "Fast, self-contained VCF to MAF converter with embedded annotatio
 license = "Apache-2.0"
 repository = "https://github.com/Sage-Bionetworks/mafsmith"
 
+[lib]
+name = "mafsmith"
+path = "src/lib.rs"
+
 [[bin]]
 name = "mafsmith"
 path = "src/main.rs"

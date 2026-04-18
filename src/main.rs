@@ -1,12 +1,7 @@
-mod annotation;
-mod cli;
-mod commands;
-mod maf;
-mod vcf;
-
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Command};
+use mafsmith::cli::{Cli, Command};
+use mafsmith::commands;
 
 #[tokio::main]
 async fn main() -> Result<()> {

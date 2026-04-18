@@ -1,2 +1,11 @@
 /target
 Cargo.lock
+
+# Large reference / real-world data files (too big for git)
+tests/fixtures/*.gz
+tests/fixtures/real_world.vcf
+tests/fixtures/Strelka_*.vcf
+tests/fixtures/expected/*_vcf2maf.maf
+*.fa
+*.fa.fai
+*.fa.gz

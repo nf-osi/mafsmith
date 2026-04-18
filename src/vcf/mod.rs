@@ -1,3 +1,5 @@
+pub mod normalization;
+
 /// A minimally parsed VCF record — we parse the raw VCF lines ourselves
 /// rather than relying on noodles here, so we can handle the heterogeneous
 /// FORMAT fields from multiple callers without schema enforcement.
