@@ -122,8 +122,14 @@ def is_sv_only(path):
     return has_svtype and not has_snv
 
 
-def parse_maf(path):
-    records = {}
+def parse_maf(path, skip_empty_chr=False):
+    """Parse MAF into {(chr, pos): [row_dict, ...]}.
+
+    skip_empty_chr: drop rows where Chromosome is blank (vcf2maf.pl secondary-row bug).
+    Returns (records_dict, skipped_count).
+    """
+    records: dict = {}
+    skipped = 0
     with open(path) as f:
         header = None
         for line in f:
@@ -135,9 +141,12 @@ def parse_maf(path):
                 continue
             chr_col = header.index("Chromosome") if "Chromosome" in header else 4
             pos_col = header.index("Start_Position") if "Start_Position" in header else 5
+            if skip_empty_chr and not fields[chr_col]:
+                skipped += 1
+                continue
             key = (fields[chr_col], fields[pos_col])
-            records[key] = dict(zip(header, fields))
-    return records
+            records.setdefault(key, []).append(dict(zip(header, fields)))
+    return records, skipped
 
 
 def normalize_hgvsp(s):
@@ -156,32 +165,83 @@ def normalize_hgvsp(s):
 HGVS_COLS = {"HGVSp", "HGVSp_Short", "HGVSc"}
 
 
+def _field_diffs(row1, row2):
+    """Count mismatched fields between two rows."""
+    diffs = 0
+    for field in COMPARE_FIELDS:
+        v1 = row1.get(field, "")
+        v2 = row2.get(field, "")
+        if field in HGVS_COLS:
+            v1, v2 = normalize_hgvsp(v1), normalize_hgvsp(v2)
+        if v1 != v2:
+            diffs += 1
+    return diffs
+
+
+def _best_ms_row(ms_rows, vc_row):
+    """Pick the mafsmith row (from a list of candidates at the same key) that best
+    matches the vcf2maf row.  Used to resolve collisions where mafsmith outputs both a
+    primary row and a secondary SV row at the same (chr, pos) key."""
+    return min(ms_rows, key=lambda r: _field_diffs(r, vc_row))
+
+
 def compare_mafs(ms_path, vc_path):
-    ms = parse_maf(ms_path)
-    vc = parse_maf(vc_path)
+    # Skip vcf2maf.pl rows with empty Chromosome — vcf2maf.pl has a known bug where
+    # it emits secondary SV breakpoint rows with Chromosome="" and Start_Position="".
+    # mafsmith correctly fills in the actual partner chr/pos for these rows.
+    ms, _ = parse_maf(ms_path, skip_empty_chr=False)
+    vc, sv_secondary_vc = parse_maf(vc_path, skip_empty_chr=True)
+
+    # Count distinct primary rows in mafsmith (keys that have at least one row)
+    total_ms_rows = sum(len(v) for v in ms.values())
+
     if not ms and not vc:
-        return {"variants": 0, "mismatches": 0, "details": []}
+        return {"variants": 0, "mismatches": 0, "sv_secondary_vc": 0,
+                "sv_secondary_ms": 0, "details": []}
 
     mismatches, details = 0, []
-    for key in sorted(set(ms) | set(vc)):
+    sv_secondary_ms = 0
+    matched_ms_keys: set = set()
+
+    # Iterate over vcf2maf keys first to find matches in mafsmith.
+    for key in sorted(vc):
+        vc_rows = vc[key]
+        vc_row = vc_rows[0]  # vcf2maf should have at most one row per key after filtering
         if key not in ms:
             details.append(f"MISSING in mafsmith: {key}")
             mismatches += 1
             continue
-        if key not in vc:
-            details.append(f"MISSING in vcf2maf:  {key}")
-            mismatches += 1
-            continue
+        matched_ms_keys.add(key)
+        # For keys with multiple mafsmith rows (primary + secondary collision),
+        # pick the best-matching row to compare against vcf2maf.
+        ms_row = _best_ms_row(ms[key], vc_row)
         for field in COMPARE_FIELDS:
-            v1 = ms[key].get(field, "")
-            v2 = vc[key].get(field, "")
+            v1 = ms_row.get(field, "")
+            v2 = vc_row.get(field, "")
             if field in HGVS_COLS:
                 v1, v2 = normalize_hgvsp(v1), normalize_hgvsp(v2)
             if v1 != v2:
                 details.append(f"{key[0]}:{key[1]} {field}: ms={v1!r} vc={v2!r}")
                 mismatches += 1
 
-    return {"variants": len(ms), "mismatches": mismatches, "details": details}
+    # mafsmith rows not in vcf2maf: secondary SV rows (correctly keyed, no vcf2maf match)
+    for key in sorted(set(ms) - matched_ms_keys):
+        for row in ms[key]:
+            tsa2 = row.get("Tumor_Seq_Allele2", "")
+            sv_alts = {"<BND>", "<DEL>", "<DUP>", "<INV>", "<TRA>"}
+            if tsa2 in sv_alts:
+                sv_secondary_ms += 1
+            else:
+                details.append(f"MISSING in vcf2maf:  {key}")
+                mismatches += 1
+
+    return {
+        "variants": total_ms_rows,
+        "mismatches": mismatches,
+        "sv_secondary_vc": sv_secondary_vc,
+        "sv_secondary_ms": sv_secondary_ms,
+        "details": details,
+    }
 
 
 def process_one(syn_id, vcf_path, work_dir, force_vcf2maf=False):
@@ -280,8 +340,12 @@ def main():
 
             if r["status"] == "ok":
                 mm = r["mismatches"]
+                sv_vc = r.get("sv_secondary_vc", 0)
+                sv_ms = r.get("sv_secondary_ms", 0)
                 print(f"    → {'✓ OK' if mm == 0 else '✗ FAIL'}: "
-                      f"{r['variants']} variants, {mm} mismatches", flush=True)
+                      f"{r['variants']} variants, {mm} mismatches "
+                      f"(SV secondary rows: vcf2maf={sv_vc} skipped, mafsmith={sv_ms} skipped)",
+                      flush=True)
                 for d in r["details"][:10]:
                     print(f"      {d}", flush=True)
                 if len(r["details"]) > 10:
@@ -294,6 +358,8 @@ def main():
             results.append({"syn_id": syn_id, "status": "error", "reason": str(e)[:300]})
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
+            # Purge entire Synapse cache to reclaim disk space between files.
+            shutil.rmtree(os.path.expanduser("~/.synapseCache"), ignore_errors=True)
 
     print("\n" + "=" * 60)
     ok      = [r for r in results if r.get("status") == "ok"]

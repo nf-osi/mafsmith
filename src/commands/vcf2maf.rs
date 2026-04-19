@@ -178,6 +178,13 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // which normalizes <DUP:TANDEM>→<DUP>, BND breakend notation→<BND>, etc.
         let svtype_tag = rec.info_field("SVTYPE");
         let is_sv_to_split = matches!(svtype_tag, Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV"));
+
+        // Drop records with unrecognized symbolic ALT alleles (<INS>, <CNV>, etc.) —
+        // vcf2maf.pl only processes BND/TRA/DEL/DUP/INV as SV types and silently drops others.
+        if effective_alt.starts_with('<') && !is_sv_to_split {
+            return Ok(vec![]);
+        }
+
         // Stash raw ALT only for SV records — Manta BND records may omit CHR2/END from INFO,
         // encoding the partner locus in the ALT notation instead.
         let raw_sv_alt = is_sv_to_split.then(|| effective_alt.clone());
