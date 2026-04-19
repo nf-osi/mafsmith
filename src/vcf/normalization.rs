@@ -15,60 +15,32 @@ pub struct Normalized {
 /// MAF uses "-" for the absent allele (REF=- ALT=CCTCTT) and positions that
 /// flank the event rather than the VCF padding convention.
 ///
-/// Algorithm (matches vcf2maf.pl `split_prefix_and_suffix`):
+/// Algorithm (matches vcf2maf.pl):
 /// 1. Strip common prefix characters, advancing position.
-/// 2. Strip common suffix characters (for same-length alleles / MNPs).
-/// 3. Replace empty allele strings with "-".
+/// 2. Replace empty allele strings with "-".
+/// Note: vcf2maf.pl does NOT strip common suffix, so ONPs like GGGT>TGGT stay as-is.
 pub fn normalize(vcf_pos: u64, ref_allele: &str, alt_allele: &str) -> Normalized {
     let rb = ref_allele.as_bytes();
     let ab = alt_allele.as_bytes();
 
-    // Step 1: common prefix
-    let prefix = rb
-        .iter()
-        .zip(ab.iter())
-        .take_while(|(r, a)| r == a)
-        .count();
-    let rb = &rb[prefix..];
-    let ab = &ab[prefix..];
+    // Strip common prefix only, advancing position.
+    let prefix = rb.iter().zip(ab.iter()).take_while(|(r, a)| r == a).count();
+    // Keep at least one base when alleles are identical (should not happen in valid VCFs).
+    let prefix = if prefix == rb.len() && prefix == ab.len() {
+        prefix.saturating_sub(1)
+    } else {
+        prefix
+    };
     let pos = vcf_pos + prefix as u64;
 
-    // Step 2: common suffix — only when both sides still have bases remaining.
-    // We limit stripping so at least the shorter allele doesn't fully disappear
-    // (the shorter one might already be empty for pure indels, in which case
-    // suffix is trivially 0).
-    let max_suffix = rb.len().min(ab.len());
-    let suffix = rb
-        .iter()
-        .rev()
-        .zip(ab.iter().rev())
-        .take(max_suffix)
-        .take_while(|(r, a)| r == a)
-        .count();
-    // Don't strip suffix that would leave BOTH alleles empty.
-    let suffix = if suffix == rb.len() && suffix == ab.len() {
-        suffix.saturating_sub(1)
-    } else {
-        suffix
-    };
-    let rb = &rb[..rb.len() - suffix];
-    let ab = &ab[..ab.len() - suffix];
-
-    let ref_maf = if rb.is_empty() {
-        "-".to_owned()
-    } else {
-        String::from_utf8_lossy(rb).into_owned()
-    };
-    let alt_maf = if ab.is_empty() {
-        "-".to_owned()
-    } else {
-        String::from_utf8_lossy(ab).into_owned()
-    };
+    // VCF alleles are ASCII, so byte indices equal char indices — direct string slicing is safe.
+    let ref_str = &ref_allele[prefix..];
+    let alt_str = &alt_allele[prefix..];
 
     Normalized {
         pos,
-        ref_allele: ref_maf,
-        alt_allele: alt_maf,
+        ref_allele: if ref_str.is_empty() { "-".to_owned() } else { ref_str.to_owned() },
+        alt_allele: if alt_str.is_empty() { "-".to_owned() } else { alt_str.to_owned() },
     }
 }
 
@@ -136,11 +108,21 @@ mod tests {
     }
 
     #[test]
-    fn mnp_strip_prefix_and_suffix() {
-        // REF=ACT ALT=AGT: shared prefix 'A', shared suffix 'T' → SNP C>G at pos+1
+    fn mnp_strip_prefix_only() {
+        // REF=ACT ALT=AGT: shared prefix 'A' stripped; suffix NOT stripped (matches vcf2maf.pl).
+        // Result: CT>GT (DNP) at pos+1, not C>G (SNP).
         let n = normalize(200, "ACT", "AGT");
         assert_eq!(n.pos, 201);
-        assert_eq!(n.ref_allele, "C");
-        assert_eq!(n.alt_allele, "G");
+        assert_eq!(n.ref_allele, "CT");
+        assert_eq!(n.alt_allele, "GT");
+    }
+
+    #[test]
+    fn onp_no_suffix_strip() {
+        // GGGT>TGGT: no common prefix; suffix GGT shared but NOT stripped (vcf2maf.pl behavior).
+        let n = normalize(100, "GGGT", "TGGT");
+        assert_eq!(n.pos, 100);
+        assert_eq!(n.ref_allele, "GGGT");
+        assert_eq!(n.alt_allele, "TGGT");
     }
 }

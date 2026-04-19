@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 ///
 /// Fields follow MAF v2.4 / GDC column order. Extra VEP annotations
 /// are stored in `extra` and appended after the standard columns.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MafRecord {
     pub hugo_symbol: String,
     pub entrez_gene_id: String,

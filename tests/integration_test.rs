@@ -37,11 +37,10 @@ fn parse_tsv(path: &Path) -> Vec<HashMap<String, String>> {
     let f = fs::File::open(path)
         .unwrap_or_else(|e| panic!("Cannot open {}: {e}", path.display()));
     let reader = BufReader::new(f);
-    let mut lines = reader.lines();
     let mut headers: Option<Vec<String>> = None;
     let mut rows = Vec::new();
 
-    for line in lines {
+    for line in reader.lines() {
         let line = line.unwrap();
         let trimmed = line.trim();
         if trimmed.is_empty() {

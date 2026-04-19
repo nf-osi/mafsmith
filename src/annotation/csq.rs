@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 
 /// Parsed representation of one CSQ transcript entry.
@@ -23,6 +23,8 @@ pub struct CsqEntry {
     pub codons: String,
     pub existing_variation: String,
     pub canonical: bool,
+    pub mane_select: bool,
+    pub mane_plus_clinical: bool,
     pub transcript_length: u64,
     pub sift: String,
     pub polyphen: String,
@@ -70,6 +72,13 @@ impl CsqFormat {
         let canonical_str = get("CANONICAL");
         let canonical = canonical_str == "YES";
 
+        // vcf2maf.pl checks the MANE field for "MANE_Select" / "MANE_Plus_Clinical".
+        // The MANE field holds the designation ("MANE_Select") while MANE_SELECT holds
+        // the RefSeq accession. We must check MANE, not MANE_SELECT.
+        let mane_field = get("MANE");
+        let mane_select = mane_field.contains("MANE_Select");
+        let mane_plus_clinical = mane_field.contains("MANE_Plus_Clinical");
+
         // Transcript length: use the denominator from cDNA_position (e.g. "1480/5971" → 5971).
         // This matches vcf2maf.pl which uses cds_length from the cDNA_position total for
         // tiebreaking when multiple transcripts have the same biotype and consequence severity.
@@ -104,8 +113,8 @@ impl CsqFormat {
             biotype: get("BIOTYPE"),
             exon: get("EXON"),
             intron: get("INTRON"),
-            hgvsc: get("HGVSc"),
-            hgvsp: get("HGVSp"),
+            hgvsc: strip_hgvs_prefix(&get("HGVSc")),
+            hgvsp: strip_hgvs_prefix(&get("HGVSp")),
             cdna_position: get("cDNA_position"),
             cds_position: get("CDS_position"),
             protein_position: get("Protein_position"),
@@ -113,6 +122,8 @@ impl CsqFormat {
             codons: get("Codons"),
             existing_variation: get("Existing_variation"),
             canonical,
+            mane_select,
+            mane_plus_clinical,
             transcript_length,
             sift: get("SIFT"),
             polyphen: get("PolyPhen"),
@@ -130,6 +141,20 @@ impl CsqFormat {
     }
 }
 
+/// Strip the transcript/protein accession prefix that some annotators (e.g. fastVEP) prepend
+/// to HGVS notation, e.g. "ENST00000675419.1:c.1286T>G" → "c.1286T>G".
+///
+/// Uses the LAST colon to match vcf2maf.pl's greedy `s/^.*://` substitution, which correctly
+/// handles BND HGVSc that contain a partner-breakpoint coordinate with an additional colon
+/// (e.g. "ENST123:c.100ins]chr2:12345]" → "12345]").
+fn strip_hgvs_prefix(s: &str) -> String {
+    if let Some(pos) = s.rfind(':') {
+        s[pos + 1..].to_owned()
+    } else {
+        s.to_owned()
+    }
+}
+
 /// Shorten a 3-letter amino acid HGVSp notation to single-letter.
 /// e.g. "p.Glu123Lys" → "p.E123K"
 pub fn shorten_hgvsp(hgvsp: &str) -> String {
@@ -138,6 +163,23 @@ pub fn shorten_hgvsp(hgvsp: &str) -> String {
         result = result.replace(three, one);
     }
     result
+}
+
+/// For splice site variants where VEP leaves HGVSp empty, vcf2maf synthesizes a
+/// pseudo-HGVSp_Short like "p.X170_splice" from the cDNA position in HGVSc.
+/// Mirrors vcf2maf.pl behavior: extract first numeric position from "c.508-4_508+1dup" → aa 170.
+pub fn splice_hgvsp_short(hgvsc: &str) -> String {
+    let digits: String = hgvsc
+        .trim_start_matches("c.")
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if let Ok(cds_pos) = digits.parse::<u64>() {
+        let aa_pos = (cds_pos + 2) / 3; // ceiling division: ceil(cds/3)
+        format!("p.X{aa_pos}_splice")
+    } else {
+        String::new()
+    }
 }
 
 const THREE_TO_ONE: &[(&str, &str)] = &[
@@ -164,8 +206,11 @@ const THREE_TO_ONE: &[(&str, &str)] = &[
     ("Ter", "*"),
     ("Sec", "U"),
     ("Pyl", "O"),
-    ("Xaa", "X"),
+    // vcf2maf.pl uses Xxx→X but not Xaa→X; Xaa is left as-is to match vcf2maf output.
+    ("Xxx", "X"),
     ("Xle", "J"),
+    ("Asx", "B"),
+    ("Glx", "Z"),
 ];
 
 #[cfg(test)]
