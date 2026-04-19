@@ -17,21 +17,34 @@ target/release/mafsmith vcf2maf \
 
 ### Scenarios covered and why each was added
 
-| Record | What it tests | Bug that prompted it |
-|--------|--------------|----------------------|
-| 21:34792292 A>C | SNV missense, multi-transcript CSQ → picks MANE/canonical | baseline |
-| 21:34880555 A>ACCTCTT | Insertion, Splice_Site classification | baseline |
-| 21:34880650 T>TG | Frameshift insertion | baseline |
-| 21:41479182 GT>G | Frameshift deletion | baseline |
-| 21:41479219 C>T | Synonymous SNV | baseline |
-| 21:44237111 C>T | Stop gained | baseline |
-| 21:34880300 G>A,C (GT=0/0) | Multi-allelic GVCF site: picks highest-depth alt (C, 25 reads) over A (3 reads) | mafsmith was defaulting to first alt instead of highest-depth alt in GVCF hom-ref calls |
-| 1:1000000 `<DEL>` CHR2+END | SV DEL: emits secondary breakpoint row at END position | mafsmith only emitted 1 MAF row per SV; vcf2maf.pl emits 2 |
-| 1:2000000 `<DUP:TANDEM>` | ALT normalized to `<DUP>` (SVTYPE=DUP) | `<DUP:TANDEM>` was passed through verbatim; vcf2maf.pl rewrites to `<SVTYPE>` |
-| 1:3000000 `G]2:5000000]` BND (CHR2=2) | BND secondary row on chr2; HGVSc greedy-stripped to `5000000]` | HGVSc was stripped at first colon; vcf2maf.pl uses last colon (greedy `s/^.*://`) |
-| 1:4000000 `T]2:6000000]` BND (no CHR2) | BND secondary row with empty chromosome (Manta-style, no CHR2 in INFO) | same missing-secondary-row bug |
-| 1:5000000 `<INV>` CHR2+END | INV secondary row | same missing-secondary-row bug |
-| 1:6000000 `<DEL>` multi-consequence | `feature_truncation&splice_acceptor_variant` → `Splice_Site` (not `Targeted_Region`) | consequences were evaluated in VEP output order; `feature_truncation` appeared first and short-circuited; fix: sort by severity before classifying |
+| Record | Variant_Classification | Variant_Type | What it tests / bug it covers |
+|--------|----------------------|--------------|-------------------------------|
+| 21:34792292 A>C | Missense_Mutation | SNP | Multi-transcript CSQ → canonical MANE transcript selected |
+| 21:34880555 A>ACCTCTT | Splice_Site | INS | Insertion classified correctly |
+| 21:34880650 T>TG | Frame_Shift_Ins | INS | Frameshift insertion |
+| 21:41479182 GT>G | Frame_Shift_Del | DEL | Frameshift deletion |
+| 21:41479219 C>T | Silent | SNP | Synonymous SNV |
+| 21:44237111 C>T | Nonsense_Mutation | SNP | Stop gained |
+| 21:34880300 G>A,C GT=0/0 | Missense_Mutation | SNP | Multi-allelic GVCF: picks highest-depth alt (C, 25 reads) not A (3 reads). Bug: mafsmith defaulted to ALT[0] instead of highest-depth alt for hom-ref GT calls |
+| 1:1000000 `<DEL>` CHR2+END | Intron | INS | SV DEL emits secondary breakpoint row. Bug: only 1 row was emitted |
+| 1:2000000 `<DUP:TANDEM>` | Intron | INS | ALT normalized to `<DUP>`. Bug: `<DUP:TANDEM>` was passed through verbatim |
+| 1:3000000 `G]2:5000000]` BND CHR2=2 | Intron | INS | BND secondary row on chr2; HGVSc=`5000000]` (greedy last-colon strip). Bug: used first colon |
+| 1:4000000 `T]2:6000000]` BND no CHR2 | Intron | INS | BND secondary row with empty chromosome (Manta-style) |
+| 1:5000000 `<INV>` CHR2+END | Intron | INS | INV secondary breakpoint row |
+| 1:6000000 `<DEL>` multi-consequence | Splice_Site | INS | `feature_truncation&splice_acceptor_variant` → Splice_Site. Bug: first consequence short-circuited; fix: sort by severity |
+| 21:45000000 GGCT>G | In_Frame_Del | DEL | 3 bp in-frame deletion |
+| 21:45100000 G>GCAG | In_Frame_Ins | INS | 3 bp in-frame insertion |
+| 21:45200000 T>C | Nonstop_Mutation | SNP | stop_lost |
+| 21:45300000 A>G | Translation_Start_Site | SNP | start_lost |
+| 21:45400000 A>G | Splice_Region | SNP | splice_region_variant (also tests multi-consequence sort) |
+| 21:45500000 C>T | 3'UTR | SNP | 3_prime_UTR_variant |
+| 21:45600000 G>A | 5'UTR | SNP | 5_prime_UTR_variant |
+| 21:45700000 T>C | 5'Flank | SNP | upstream_gene_variant |
+| 21:45800000 A>G | 3'Flank | SNP | downstream_gene_variant |
+| 21:45900000 G>A | Intron | SNP | intron_variant (SNV, not SV) |
+| 21:46000000 C>T | IGR | SNP | intergenic_variant |
+| 21:46100000 G>A | RNA | SNP | non_coding_transcript_exon_variant (lncRNA biotype) |
+| 21:46200000 AC>GT | Missense_Mutation | DNP | Dinucleotide polymorphism Variant_Type |
 
 ### Known remaining differences vs vcf2maf.pl (not fixed, not fixable)
 
