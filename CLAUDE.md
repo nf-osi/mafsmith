@@ -49,7 +49,8 @@ target/release/mafsmith vcf2maf \
 ### Known remaining differences vs vcf2maf.pl
 
 - **Multi-allelic GVCF tie**: when two ALTs have identical depth, tool-specific tie-breaking may differ. Affects ~4 variants in large GVCF files.
-- **MISSING in vcf2maf**: occasionally mafsmith emits a secondary SV row that vcf2maf.pl does not (e.g. when CHR2 is present but vcf2maf.pl's perl regex fails). These are correct mafsmith rows.
+- **SV secondary rows**: mafsmith correctly emits secondary SV breakpoint rows with actual partner chromosome/position. vcf2maf.pl emits them with empty Chromosome (a vcf2maf.pl bug). The `synapse_validate.py` comparison script handles this with best-match selection for key collisions and skips empty-chromosome vcf2maf rows.
+- **Unrecognized symbolic ALTs**: records with `<INS>`, `<CNV>` or other non-BND/TRA/DEL/DUP/INV symbolic ALTs are dropped (matching vcf2maf.pl behavior).
 
 ## Performance
 

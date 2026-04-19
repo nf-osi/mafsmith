@@ -31,6 +31,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 indexmap = "2"
 rayon = "1"
+tikv-jemallocator = "0.6"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -38,3 +39,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "vcf2maf"
 harness = false
+
+[profile.release]
+debug = 1

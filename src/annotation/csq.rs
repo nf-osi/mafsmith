@@ -32,19 +32,60 @@ pub struct CsqEntry {
     pub extra: HashMap<String, String>,
 }
 
+/// Lightweight transcript info for selection (borrows from the raw CSQ string — no allocations).
+pub struct CsqLightEntry<'a> {
+    pub feature_type: &'a str,
+    pub symbol: &'a str,
+    pub feature: &'a str,
+    pub biotype: &'a str,
+    pub canonical: bool,
+    pub transcript_length: u64,
+    pub consequences: Vec<&'a str>,
+    /// Raw HGVSp value (may have a transcript prefix "ENST…:p.X"); strip with rfind(':').
+    pub hgvsp_raw: &'a str,
+}
+
+/// Field names extracted for lightweight transcript selection, in slot order.
+/// Slots map 1-to-1 with the fields stored in `CsqLightEntry`.
+const LIGHT_FIELD_NAMES: [&str; 8] = [
+    "Feature_type",  // slot 0
+    "SYMBOL",        // slot 1
+    "Feature",       // slot 2
+    "BIOTYPE",       // slot 3
+    "CANONICAL",     // slot 4
+    "cDNA_position", // slot 5
+    "Consequence",   // slot 6
+    "HGVSp",         // slot 7
+];
+
 /// Extracted from the VCF header CSQ FORMAT string.
 #[derive(Debug, Clone)]
 pub struct CsqFormat {
     pub fields: Vec<String>,
     pub index: HashMap<String, usize>,
+    /// (csq_field_index, slot_index) pairs for the 8 light fields, sorted by csq_field_index.
+    /// Used by parse_light for a single forward scan — no Vec<&str> parts allocation needed.
+    light_scan: Vec<(usize, u8)>,
+    /// Largest csq_field_index among the 8 light fields (scan can stop after this).
+    light_max: usize,
 }
 
 impl CsqFormat {
+    fn build_light_scan(index: &HashMap<String, usize>) -> (Vec<(usize, u8)>, usize) {
+        let mut pairs: Vec<(usize, u8)> = LIGHT_FIELD_NAMES.iter()
+            .enumerate()
+            .filter_map(|(slot, name)| index.get(*name).map(|&fi| (fi, slot as u8)))
+            .collect();
+        pairs.sort_by_key(|(fi, _)| *fi);
+        let max = pairs.iter().map(|(fi, _)| *fi).max().unwrap_or(0);
+        (pairs, max)
+    }
+
     /// An empty format with no fields — used when no CSQ header is present.
     /// parse_all() on any record returns an empty Vec, causing unannotated
     /// variants to be dropped (matching vcf2maf.pl --inhibit-vep behavior).
     pub fn empty() -> Self {
-        Self { fields: Vec::new(), index: HashMap::new() }
+        Self { fields: Vec::new(), index: HashMap::new(), light_scan: Vec::new(), light_max: 0 }
     }
 
     /// Parse the CSQ FORMAT from a VCF INFO description line.
@@ -60,7 +101,8 @@ impl CsqFormat {
         let fields: Vec<String> = format_str.split('|').map(|s| s.to_owned()).collect();
         let index: HashMap<String, usize> =
             fields.iter().enumerate().map(|(i, f)| (f.clone(), i)).collect();
-        Ok(Self { fields, index })
+        let (light_scan, light_max) = Self::build_light_scan(&index);
+        Ok(Self { fields, index, light_scan, light_max })
     }
 
     fn get<'a>(&self, parts: &'a [&'a str], name: &str) -> &'a str {
@@ -69,6 +111,51 @@ impl CsqFormat {
             .and_then(|&i| parts.get(i))
             .copied()
             .unwrap_or("")
+    }
+
+    /// Parse only the fields needed for transcript selection — no Vec<&str> parts allocation.
+    /// Uses a single forward scan through the pipe-delimited entry guided by pre-sorted
+    /// field indices, stopping as soon as all 8 target fields have been collected.
+    /// All returned values borrow from `raw`.
+    pub fn parse_light<'a>(&self, raw: &'a str) -> CsqLightEntry<'a> {
+        let mut slots: [&'a str; 8] = [""; 8];
+        let mut scan_pos = 0usize; // index into self.light_scan
+        let total_targets = self.light_scan.len();
+
+        for (field_idx, part) in raw.split('|').enumerate() {
+            if field_idx > self.light_max || scan_pos >= total_targets {
+                break;
+            }
+            if self.light_scan[scan_pos].0 == field_idx {
+                slots[self.light_scan[scan_pos].1 as usize] = part;
+                scan_pos += 1;
+            }
+        }
+
+        // slot 5 = cDNA_position
+        let transcript_length: u64 = slots[5]
+            .split('/').nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        CsqLightEntry {
+            feature_type: slots[0],
+            symbol: slots[1],
+            feature: slots[2],
+            biotype: slots[3],
+            canonical: slots[4] == "YES",
+            transcript_length,
+            consequences: slots[6].split('&').collect(), // Vec<&'a str>, typically 1-3 items
+            hgvsp_raw: slots[7],
+        }
+    }
+
+    /// Parse all CSQ entries into lightweight selection keys paired with their raw strings.
+    /// Returns `(light_entry, raw_csq_entry)` — call `parse_entry(raw, fields)` on the winner.
+    pub fn parse_all_light<'a>(&self, csq_value: &'a str) -> Vec<(CsqLightEntry<'a>, &'a str)> {
+        csq_value.split(',')
+            .map(|raw| (self.parse_light(raw), raw))
+            .collect()
     }
 
     /// Parse a single pipe-delimited CSQ value string into a [`CsqEntry`].

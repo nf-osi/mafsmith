@@ -16,7 +16,8 @@ pub struct VcfRecord {
     pub qual: String,
     pub filter: String,
     pub info: String,
-    pub format_keys: Vec<String>,
+    /// Shared when FORMAT column is unchanged across records — clone is an Arc refcount bump.
+    pub format_keys: Arc<Vec<String>>,
     /// Raw sample column strings ("GT:AD:DP" form), one per sample, split on demand.
     pub samples_raw: Vec<String>,
     /// Shared across all records from the same VCF — clone is an Arc refcount bump.
@@ -63,6 +64,10 @@ pub struct VcfReader<R: std::io::BufRead> {
     pub sample_names: Vec<String>,
     sample_names_arc: Arc<Vec<String>>,
     initialized: bool,
+    /// Cache last-seen FORMAT string and its parsed Arc so identical FORMAT rows
+    /// share one Arc (refcount bump) instead of allocating a fresh Vec<String> per record.
+    last_format_str: String,
+    last_format_arc: Arc<Vec<String>>,
 }
 
 impl<R: std::io::BufRead> VcfReader<R> {
@@ -73,6 +78,8 @@ impl<R: std::io::BufRead> VcfReader<R> {
             sample_names: Vec::new(),
             sample_names_arc: Arc::new(Vec::new()),
             initialized: false,
+            last_format_str: String::new(),
+            last_format_arc: Arc::new(Vec::new()),
         }
     }
 
@@ -133,12 +140,22 @@ impl<R: std::io::BufRead> VcfReader<R> {
             let info = cols[7].to_owned();
 
             let (format_keys, samples_raw) = if cols.len() > 8 {
-                let keys: Vec<String> = cols[8].split(':').map(|s| s.to_owned()).collect();
+                let fmt_str = cols[8];
+                // Reuse Arc when FORMAT is identical to last record (common case: same caller/file).
+                let keys = if fmt_str == self.last_format_str {
+                    Arc::clone(&self.last_format_arc)
+                } else {
+                    let arc = Arc::new(fmt_str.split(':').map(|s| s.to_owned()).collect::<Vec<_>>());
+                    self.last_format_str.clear();
+                    self.last_format_str.push_str(fmt_str);
+                    self.last_format_arc = Arc::clone(&arc);
+                    arc
+                };
                 // Store each sample column as a single raw string; split on demand in sample_fields_by_idx.
                 let raw: Vec<String> = cols[9..].iter().map(|s| s.to_string()).collect();
                 (keys, raw)
             } else {
-                (vec![], vec![])
+                (Arc::new(vec![]), vec![])
             };
 
             return Ok(Some(VcfRecord {

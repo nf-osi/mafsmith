@@ -1,9 +1,9 @@
 use crate::{
     annotation::{
         consequence::{so_to_variant_classification, variant_type},
-        csq::{shorten_hgvsp, splice_hgvsp_short, CsqEntry, CsqFormat},
+        csq::{shorten_hgvsp, splice_hgvsp_short, CsqEntry, CsqFormat, CsqLightEntry},
         depth::extract_depth,
-        transcript::select_transcript,
+        transcript::select_transcript_light,
     },
     cli::Vcf2mafArgs,
     maf::{record::MafRecord, writer::MafWriter},
@@ -32,10 +32,28 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     // Either run fastVEP → temp file, or read the already-annotated input VCF directly.
     let mut sv_ref_fasta: Option<PathBuf> = args.ref_fasta.clone();
     let (annotated_path, _tmp): (PathBuf, Option<NamedTempFile>) = if args.skip_annotation {
+        // Auto-resolve ref-fasta even in skip-annotation mode so we can validate the genome build.
+        // If it's not available (user hasn't run `mafsmith fetch`), warn and skip validation.
+        let resolved = args.ref_fasta.clone().or_else(|| {
+            let p = data_dir.join(genome_str).join("reference.fa");
+            if p.exists() { Some(p) } else { None }
+        });
+        match resolved {
+            Some(ref rf) => {
+                sv_ref_fasta = Some(rf.clone());
+                validate_ref_fasta(rf, &args.input_vcf)?;
+            }
+            None => warn!(
+                "No reference FASTA available — genome build not validated. \
+                 Run `mafsmith fetch --genome {}` or pass --ref-fasta.",
+                args.genome.ncbi_build().to_lowercase()
+            ),
+        }
         (args.input_vcf.clone(), None)
     } else {
         let ref_fasta = resolve_ref_fasta(&args.ref_fasta, &data_dir, genome_str)?;
         sv_ref_fasta = Some(ref_fasta.clone());
+        validate_ref_fasta(&ref_fasta, &args.input_vcf)?;
         let gff3 = resolve_gff3(&args.gff3, &data_dir, genome_str)?;
         let fastvep = resolve_fastvep(&args.fastvep_path, &data_dir)?;
         info!("Annotating variants with fastVEP...");
@@ -52,7 +70,13 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
     let in_file = fs::File::open(&annotated_path)
         .with_context(|| format!("Cannot open annotated VCF: {}", annotated_path.display()))?;
-    let mut vcf = VcfReader::new(BufReader::new(in_file));
+    let is_gz = annotated_path.extension().map_or(false, |e| e == "gz");
+    let mut vcf = if is_gz {
+        let dec = MultiGzDecoder::new(in_file);
+        VcfReader::new(BufReader::new(Box::new(dec) as Box<dyn std::io::Read>))
+    } else {
+        VcfReader::new(BufReader::new(Box::new(in_file) as Box<dyn std::io::Read>))
+    };
 
     // Pull CSQ FORMAT from header before iterating records
     let mut csq_format: Option<CsqFormat> = None;
@@ -107,14 +131,15 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
     // Convert one VCF record to MAF row(s). Returns Vec with optional secondary SV row first.
     let convert_record = |rec: &crate::vcf::VcfRecord| -> Result<Vec<MafRecord>> {
-        let entries = match rec.csq_value() {
-            Some(v) => csq_format.parse_all(v, &args.retain_ann),
-            None => vec![],
-        };
+        // Lazy CSQ parsing: parse lightweight entries for all transcripts (no String allocations),
+        // then fully parse only the selected transcript.
+        let light_entries: Vec<(CsqLightEntry<'_>, &str)> = rec.csq_value()
+            .map(|v| csq_format.parse_all_light(v))
+            .unwrap_or_default();
 
         // Unannotated variants: vcf2maf.pl emits a Targeted_Region row for recognized SV types
         // (BND/TRA/DEL/DUP/INV) even without CSQ, but drops CNV and other unrecognized types.
-        let default_entry: Option<CsqEntry> = if entries.is_empty() {
+        let default_entry: Option<CsqEntry> = if light_entries.is_empty() {
             match rec.info_field("SVTYPE") {
                 Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV") => {
                     Some(CsqEntry::default())
@@ -124,25 +149,39 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         } else {
             None
         };
-        let transcript: &CsqEntry = match select_transcript(&entries, custom_enst.as_ref()) {
-            Some(t) => t,
-            None => match &default_entry {
+
+        // Select the best transcript from lightweight entries (cheap sort/scan, no allocation).
+        let transcript: CsqEntry = if !light_entries.is_empty() {
+            match select_transcript_light(&light_entries, custom_enst.as_ref()) {
+                Some(idx) => csq_format.parse_entry(light_entries[idx].1, &args.retain_ann),
+                None => match default_entry {
+                    Some(e) => e,
+                    None => return Ok(vec![]),
+                },
+            }
+        } else {
+            match default_entry {
                 Some(e) => e,
                 None => return Ok(vec![]),
-            },
+            }
         };
 
-        let fk: Vec<&str> = rec.format_keys.iter().map(|s| s.as_str()).collect();
+        // Pre-split sample fields once per record to avoid redundant string splits.
+        let tumor_vals: Option<Vec<&str>> = tumor_idx
+            .and_then(|i| rec.samples_raw.get(i))
+            .map(|s| s.split(':').collect());
+        let normal_vals: Option<Vec<&str>> = normal_idx
+            .and_then(|i| rec.samples_raw.get(i))
+            .map(|s| s.split(':').collect());
 
         // Select the effective tumor ALT allele.
         // - GT has a non-ref allele: use its index directly.
         // - GT is all-ref or missing (hom-ref call in GVCF / no-call): pick the alt with the
         //   highest read depth in AD. vcf2maf.pl uses the same highest-depth fallback, which
         //   is why multi-allelic GVCF sites can differ from simply defaulting to ALT1.
-        let (effective_alt, effective_alt_vcf_idx) = tumor_idx
-            .and_then(|idx| rec.sample_fields_by_idx(idx))
+        let (effective_alt, effective_alt_vcf_idx) = tumor_vals.as_deref()
             .and_then(|vals| {
-                let gt_idx = fk.iter().position(|&k| k == "GT")?;
+                let gt_idx = rec.format_keys.iter().position(|k| k == "GT")?;
                 let gt = vals.get(gt_idx)?;
                 let idxs: Vec<usize> = gt
                     .split(|c| c == '/' || c == '|')
@@ -156,7 +195,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 }
 
                 // GT is all-ref or missing: pick highest-depth alt from AD.
-                let ad_idx = fk.iter().position(|&k| k == "AD")?;
+                let ad_idx = rec.format_keys.iter().position(|k| k == "AD")?;
                 let ad_vals: Vec<u32> = vals.get(ad_idx)?
                     .split(',').filter_map(|v| v.parse().ok()).collect();
                 // Use first-maximum: when depths tie, prefer the lower allele index (vcf2maf.pl behavior).
@@ -176,7 +215,14 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // Normalize SV ALT alleles to <SVTYPE> form.
         // vcf2maf.pl does `$cols[4] = "<" . $info{SVTYPE} . ">"` for BND/TRA/DEL/DUP/INV,
         // which normalizes <DUP:TANDEM>→<DUP>, BND breakend notation→<BND>, etc.
-        let svtype_tag = rec.info_field("SVTYPE");
+        //
+        // Fast path: SVTYPE only appears in SV records. For annotated non-SV records, INFO starts
+        // with "CSQ=" and we can skip the full info_field scan (O(|info|)) in O(7) characters.
+        let svtype_tag: Option<&str> = if rec.info.starts_with("SVTYPE=") || rec.info.contains(";SVTYPE=") {
+            rec.info_field("SVTYPE")
+        } else {
+            None
+        };
         let is_sv_to_split = matches!(svtype_tag, Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV"));
 
         // Drop records with unrecognized symbolic ALT alleles (<INS>, <CNV>, etc.) —
@@ -231,12 +277,10 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         };
 
         // Allele depths — use effective alt index for correct AD field in multi-allelic records.
-        let tumor_depth = tumor_idx
-            .and_then(|idx| rec.sample_fields_by_idx(idx))
-            .map(|vals| extract_depth(&fk, &vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
-        let normal_depth = normal_idx
-            .and_then(|idx| rec.sample_fields_by_idx(idx))
-            .map(|vals| extract_depth(&fk, &vals, &rec.ref_allele, &rec.alt_allele, 1));
+        let tumor_depth = tumor_vals.as_deref()
+            .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
+        let normal_depth = normal_vals.as_deref()
+            .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &rec.alt_allele, 1));
 
         let var_class =
             so_to_variant_classification(&transcript.consequences, &norm.ref_allele, &norm.alt_allele);
@@ -252,17 +296,20 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         };
 
         // all_effects: semicolon-separated list for every annotated transcript.
-        // Build directly into a String to avoid intermediate Vec<String> + join allocation.
+        // Use light entries — avoids a full CsqEntry parse for each transcript.
+        // hgvsp prefix is stripped inline (rfind(':')) without allocating.
         let mut all_effects = String::new();
-        for e in entries.iter().filter(|e| !e.feature.is_empty()) {
+        for (light, _) in light_entries.iter().filter(|(l, _)| !l.feature.is_empty()) {
             if !all_effects.is_empty() { all_effects.push(';'); }
-            let cls = so_to_variant_classification(&e.consequences, &rec.ref_allele, &rec.alt_allele);
-            write!(all_effects, "{},", e.symbol).unwrap();
-            for (i, csq) in e.consequences.iter().enumerate() {
+            let cls = so_to_variant_classification(&light.consequences, &rec.ref_allele, &rec.alt_allele);
+            write!(all_effects, "{},", light.symbol).unwrap();
+            for (i, csq) in light.consequences.iter().enumerate() {
                 if i > 0 { all_effects.push('&'); }
                 all_effects.push_str(csq);
             }
-            write!(all_effects, ",{},{}", cls, e.hgvsp).unwrap();
+            let hgvsp = light.hgvsp_raw;
+            let hgvsp_stripped = hgvsp.rfind(':').map(|p| &hgvsp[p+1..]).unwrap_or(hgvsp);
+            write!(all_effects, ",{},{}", cls, hgvsp_stripped).unwrap();
         }
 
         let hgvsp_short = if transcript.hgvsp.is_empty() && var_class == "Splice_Site" {
@@ -277,12 +324,25 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         };
 
         // Tumor_Seq_Allele1: sort GT allele indices and use the smallest, matching vcf2maf.
-        // 0/1 or 1|0 → min=0 → ref; 1/1 → min=1 → alt; missing GT → alt.
+        // 0/1 or 1|0 → min=0 → ref; 1/1 → min=1 → alt.
+        // No GT field (Strelka2 somatic callers): use depth-based VAF to infer het vs hom-alt.
         // GT=1/2 or 0/2 with multi-allelic: the "other" GT allele drives Tumor_Seq_Allele1.
-        let tumor_seq_allele1 = tumor_idx
-            .and_then(|idx| rec.sample_fields_by_idx(idx))
+        let tumor_seq_allele1 = tumor_vals.as_deref()
             .and_then(|vals| {
-                let gt_idx = fk.iter().position(|&k| k == "GT")?;
+                // When no GT field is present (e.g. Strelka2 somatic), use depth-based VAF to
+                // determine het vs hom-alt, matching vcf2maf.pl behavior.
+                // VAF >= 0.7 (min_hom_vaf default) → hom-alt → TSA1=alt; else het → TSA1=ref.
+                let gt_idx = rec.format_keys.iter().position(|k| k == "GT");
+                if gt_idx.is_none() {
+                    let ad = extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx);
+                    let hom_alt = match (ad.alt_count, ad.depth()) {
+                        (Some(alt), Some(total)) if total > 0 => alt as f64 / total as f64 >= 0.7,
+                        _ => false,
+                    };
+                    return Some(if hom_alt { norm.alt_allele.clone() } else { norm.ref_allele.clone() });
+                }
+
+                let gt_idx = gt_idx.unwrap();
                 let gt = vals.get(gt_idx)?;
                 let mut idxs: Vec<usize> = gt
                     .split(|c| c == '/' || c == '|')
@@ -296,12 +356,12 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 let needs_depth_fallback = idxs.is_empty() || idxs.iter().all(|&i| i == 0);
                 if needs_depth_fallback {
                     let hom_alt = (|| -> Option<bool> {
-                        let ad_idx = fk.iter().position(|&k| k == "AD")?;
+                        let ad_idx = rec.format_keys.iter().position(|k| k == "AD")?;
                         let ad_vals: Vec<u32> = vals.get(ad_idx)?
                             .split(',').filter_map(|v| v.parse().ok()).collect();
                         let var_depth = *ad_vals.get(effective_alt_vcf_idx)?;
                         if var_depth == 0 { return Some(false); }
-                        let dp = fk.iter().position(|&k| k == "DP")
+                        let dp = rec.format_keys.iter().position(|k| k == "DP")
                             .and_then(|i| vals.get(i))
                             .and_then(|v| v.parse::<u32>().ok())
                             .unwrap_or_else(|| ad_vals.iter().sum());
@@ -486,6 +546,53 @@ fn parse_bnd_alt(alt: &str) -> Option<(String, u64)> {
     let chr2 = content[..colon].to_owned();
     let pos: u64 = content[colon + 1..].parse().ok()?;
     Some((chr2, pos))
+}
+
+/// Check that the input VCF's chromosomes appear in the FASTA index (.fai).
+/// Samples up to 10 non-symbolic variants; if none of their chromosomes are found
+/// in the .fai, the ref-fasta is almost certainly a different genome build.
+/// Mirrors vcf2maf.pl's behavior: it dies when samtools fetches 0 flanking sequences.
+fn validate_ref_fasta(fasta: &Path, vcf: &Path) -> Result<()> {
+    let fai_path = PathBuf::from(format!("{}.fai", fasta.display()));
+    let fai_content = fs::read_to_string(&fai_path)
+        .with_context(|| format!("Cannot read FASTA index {}", fai_path.display()))?;
+    let fai_chroms: HashSet<&str> = fai_content
+        .lines()
+        .filter_map(|l| l.split('\t').next())
+        .collect();
+
+    let f = fs::File::open(vcf)?;
+    let is_gz = vcf.extension().map_or(false, |e| e == "gz");
+    let lines: Box<dyn Iterator<Item = String>> = if is_gz {
+        Box::new(BufReader::new(MultiGzDecoder::new(f)).lines().flatten())
+    } else {
+        Box::new(BufReader::new(f).lines().flatten())
+    };
+
+    let mut sampled: Vec<String> = Vec::new();
+    for line in lines {
+        if line.starts_with('#') { continue; }
+        let mut cols = line.splitn(6, '\t');
+        let chrom = match cols.next() { Some(c) => c.to_owned(), None => continue };
+        // Skip the ALT check — just sample chromosomes from any data line
+        sampled.push(chrom);
+        if sampled.len() >= 10 { break; }
+    }
+
+    if sampled.is_empty() {
+        return Ok(());
+    }
+
+    if sampled.iter().any(|c| fai_chroms.contains(c.as_str())) {
+        return Ok(());
+    }
+
+    bail!(
+        "--ref-fasta '{}' does not match the genome build of input VCF '{}'. \
+         VCF chromosome '{}' was not found in the FASTA index. \
+         Check that the genome build and chromosome naming (chr-prefix) are consistent.",
+        fasta.display(), vcf.display(), sampled[0]
+    );
 }
 
 fn fasta_chrom_has_chr(fasta: &Path) -> bool {

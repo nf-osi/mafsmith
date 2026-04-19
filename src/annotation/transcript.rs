@@ -1,4 +1,4 @@
-use super::{consequence::consequence_severity, csq::CsqEntry};
+use super::{consequence::consequence_severity, csq::{CsqEntry, CsqLightEntry}};
 use std::collections::HashSet;
 
 /// Biotype priority (lower = preferred). Matches vcf2maf.pl GetBiotypePriority exactly.
@@ -115,6 +115,75 @@ pub fn select_transcript<'a>(
 
     // Priority 5: first sorted entry regardless of symbol.
     sorted.first().copied()
+}
+
+/// Select the best transcript from lightweight CSQ entries, returning its index in the slice.
+///
+/// Same selection logic as `select_transcript` but operates on `CsqLightEntry` (no heap
+/// allocations for unselected transcripts). Returns `None` if entries is empty.
+pub fn select_transcript_light<'a>(
+    entries: &'a [(CsqLightEntry<'a>, &'a str)],
+    custom_enst: Option<&HashSet<String>>,
+) -> Option<usize> {
+    if entries.is_empty() {
+        return None;
+    }
+
+    // Filter to Transcript features, tracking original indices for the return value.
+    let candidates: Vec<(usize, &CsqLightEntry<'a>)> = {
+        let ts: Vec<_> = entries.iter().enumerate()
+            .filter(|(_, (e, _))| e.feature_type.is_empty() || e.feature_type == "Transcript")
+            .map(|(i, (e, _))| (i, e))
+            .collect();
+        if ts.is_empty() {
+            entries.iter().enumerate().map(|(i, (e, _))| (i, e)).collect()
+        } else {
+            ts
+        }
+    };
+
+    let mut sorted: Vec<(usize, &CsqLightEntry<'a>)> = candidates;
+    sorted.sort_by_key(|(_, e)| (
+        biotype_rank(e.biotype),
+        consequence_severity(&e.consequences),
+        -(e.transcript_length as i64),
+    ));
+
+    let maf_gene: Option<&str> = sorted.iter()
+        .find(|(_, e)| !e.symbol.is_empty())
+        .map(|(_, e)| e.symbol);
+
+    if let (Some(gene), Some(enst_set)) = (maf_gene, custom_enst) {
+        if let Some((idx, _)) = sorted.iter()
+            .find(|(_, e)| e.symbol == gene && enst_set.contains(e.feature))
+        {
+            return Some(*idx);
+        }
+    }
+
+    if let Some(gene) = maf_gene {
+        if let Some((idx, _)) = sorted.iter()
+            .find(|(_, e)| e.symbol == gene && e.canonical)
+        {
+            return Some(*idx);
+        }
+    }
+
+    if let Some(enst_set) = custom_enst {
+        if let Some((idx, _)) = sorted.iter()
+            .find(|(_, e)| !e.symbol.is_empty() && enst_set.contains(e.feature))
+        {
+            return Some(*idx);
+        }
+    }
+
+    if let Some((idx, _)) = sorted.iter()
+        .find(|(_, e)| !e.symbol.is_empty() && e.canonical)
+    {
+        return Some(*idx);
+    }
+
+    sorted.first().map(|(idx, _)| *idx)
 }
 
 #[cfg(test)]

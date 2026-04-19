@@ -26,8 +26,11 @@ impl AlleleDepth {
 ///
 /// `alt_vcf_idx`: 1-based VCF allele index of the selected ALT (1 = first ALT, 2 = second, …).
 /// This is used as the AD array index for the alt count in multi-allelic records.
-pub fn extract_depth(
-    format_keys: &[&str],
+///
+/// `F` is generic so callers can pass `&[String]` (from VcfRecord) without first collecting
+/// to `Vec<&str>`, avoiding a per-record allocation.
+pub fn extract_depth<F: AsRef<str>>(
+    format_keys: &[F],
     sample_values: &[&str],
     ref_allele: &str,
     alt_allele: &str,
@@ -36,7 +39,7 @@ pub fn extract_depth(
     let get = |key: &str| -> Option<&str> {
         format_keys
             .iter()
-            .position(|k| *k == key)
+            .position(|k| k.as_ref() == key)
             .and_then(|i| sample_values.get(i).copied())
             .filter(|v| !v.is_empty() && *v != ".")
     };
