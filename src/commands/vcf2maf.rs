@@ -159,8 +159,15 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 let ad_idx = fk.iter().position(|&k| k == "AD")?;
                 let ad_vals: Vec<u32> = vals.get(ad_idx)?
                     .split(',').filter_map(|v| v.parse().ok()).collect();
-                let (best_idx, _) = ad_vals.iter().enumerate().skip(1)
-                    .max_by_key(|&(_, &c)| c)?;
+                // Use first-maximum: when depths tie, prefer the lower allele index (vcf2maf.pl behavior).
+                // Rust's max_by_key returns the LAST maximum; fold with strict > keeps the FIRST.
+                let best_idx = ad_vals.iter().enumerate().skip(1)
+                    .fold(None::<(usize, u32)>, |best, (i, &c)| Some(match best {
+                        None => (i, c),
+                        Some((_, bc)) if c > bc => (i, c),
+                        Some(b) => b,
+                    }))
+                    .map(|(i, _)| i)?;
                 let alt_allele = rec.all_alts.get(best_idx - 1)?.clone();
                 Some((alt_allele, best_idx))
             })
