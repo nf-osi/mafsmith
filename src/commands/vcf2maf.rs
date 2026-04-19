@@ -146,6 +146,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // which normalizes <DUP:TANDEM>→<DUP>, BND breakend notation→<BND>, etc.
         let svtype_tag = rec.info_field("SVTYPE");
         let is_sv_to_split = matches!(svtype_tag, Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV"));
+        // Stash raw ALT only for SV records — Manta BND records may omit CHR2/END from INFO,
+        // encoding the partner locus in the ALT notation instead.
+        let raw_sv_alt = is_sv_to_split.then(|| effective_alt.clone());
         let effective_alt = if is_sv_to_split
             && (effective_alt.starts_with('<') || effective_alt.contains('[') || effective_alt.contains(']'))
         {
@@ -168,20 +171,20 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // using samtools faidx to fetch the reference base at the partner location.
         // We replicate this by reading the FASTA index (.fai) directly.
         let sv_secondary: Option<(String, u64, String)> = if is_sv_to_split && effective_alt.starts_with('<') {
-            rec.info_field("END")
-                .and_then(|s| s.parse::<u64>().ok())
-                .map(|end_val| {
-                    let chr2 = rec.info_field("CHR2").unwrap_or("").to_owned();
-                    let ref2 = if !chr2.is_empty() {
-                        sv_ref_fasta.as_deref()
-                            .and_then(|fa| fasta_fetch_base(fa, &chr2, end_val))
-                            .map(|c| c.to_string())
-                            .unwrap_or_else(|| rec.ref_allele.clone())
-                    } else {
-                        rec.ref_allele.clone()
-                    };
-                    (chr2, end_val, ref2)
-                })
+            let chr2_end = if let Some(chr2) = rec.info_field("CHR2").filter(|s| !s.is_empty()) {
+                rec.info_field("END")
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(|end_val| (chr2.to_owned(), end_val))
+            } else {
+                raw_sv_alt.as_deref().and_then(parse_bnd_alt)
+            };
+            chr2_end.map(|(chr2, end_val)| {
+                let ref2 = sv_ref_fasta.as_deref()
+                    .and_then(|fa| fasta_fetch_base(fa, &chr2, end_val))
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| rec.ref_allele.clone());
+                (chr2, end_val, ref2)
+            })
         } else {
             None
         };
@@ -407,6 +410,22 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     writer.flush()?;
     info!("MAF written to {}", args.output_maf.display());
     Ok(())
+}
+
+/// Parse CHR2 and END from a BND ALT allele string.
+/// Handles all four VCF 4.x BND notations where the partner locus is between
+/// matching `]` or `[` bracket characters: `]chr:pos]base`, `base]chr:pos]`,
+/// `[chr:pos[base`, `base[chr:pos[`.
+fn parse_bnd_alt(alt: &str) -> Option<(String, u64)> {
+    let bracket = if alt.contains(']') { ']' } else { '[' };
+    let mut positions = alt.match_indices(bracket).map(|(i, _)| i);
+    let first = positions.next()?;
+    let second = positions.next()?;
+    let content = &alt[first + 1..second];
+    let colon = content.rfind(':')?;
+    let chr2 = content[..colon].to_owned();
+    let pos: u64 = content[colon + 1..].parse().ok()?;
+    Some((chr2, pos))
 }
 
 fn fasta_chrom_has_chr(fasta: &Path) -> bool {

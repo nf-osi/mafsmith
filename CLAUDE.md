@@ -29,7 +29,7 @@ target/release/mafsmith vcf2maf \
 | 1:1000000 `<DEL>` CHR2+END | Intron | INS | SV DEL emits secondary breakpoint row. Bug: only 1 row was emitted |
 | 1:2000000 `<DUP:TANDEM>` | Intron | INS | ALT normalized to `<DUP>`. Bug: `<DUP:TANDEM>` was passed through verbatim |
 | 1:3000000 `G]2:5000000]` BND CHR2=2 | Intron | INS | BND secondary row on chr2; HGVSc=`5000000]` (greedy last-colon strip). Bug: used first colon |
-| 1:4000000 `T]2:6000000]` BND no CHR2 | Intron | INS | BND secondary row with empty chromosome (Manta-style) |
+| 1:4000000 `T]2:6000000]` BND no CHR2/END in INFO | Intron | INS | BND secondary row parsed from ALT notation. Bug: only INFO was checked; fix: parse `chr:pos` from `]chr:pos]` or `[chr:pos[` in ALT when CHR2 absent |
 | 1:5000000 `<INV>` CHR2+END | Intron | INS | INV secondary breakpoint row |
 | 1:6000000 `<DEL>` multi-consequence | Splice_Site | INS | `feature_truncation&splice_acceptor_variant` → Splice_Site. Bug: first consequence short-circuited; fix: sort by severity |
 | 21:45000000 GGCT>G | In_Frame_Del | DEL | 3 bp in-frame deletion |
@@ -46,10 +46,9 @@ target/release/mafsmith vcf2maf \
 | 21:46100000 G>A | RNA | SNP | non_coding_transcript_exon_variant (lncRNA biotype) |
 | 21:46200000 AC>GT | Missense_Mutation | DNP | Dinucleotide polymorphism Variant_Type |
 
-### Known remaining differences vs vcf2maf.pl (not fixed, not fixable)
+### Known remaining differences vs vcf2maf.pl
 
-- **BND with no CHR2 and no END**: vcf2maf.pl emits a secondary row at `('', '')`. mafsmith cannot generate this row without a position. One per typical somaticSV file.
-- **Multi-allelic GVCF tie**: when two ALTs have identical depth, tool-specific tie-breaking differs. Affects ~4 variants in large GVCF files.
+- **Multi-allelic GVCF tie**: when two ALTs have identical depth, tool-specific tie-breaking may differ. Affects ~4 variants in large GVCF files.
 - **MISSING in vcf2maf**: occasionally mafsmith emits a secondary SV row that vcf2maf.pl does not (e.g. when CHR2 is present but vcf2maf.pl's perl regex fails). These are correct mafsmith rows.
 
 ## Performance
