@@ -102,13 +102,22 @@ pub fn extract_depth(
     }
 
     // 4. Strelka indels: TAR (ref), TIR (alt)
+    // vcf2maf.pl uses max(DP, TAR[0]+TIR[0]) for total depth, because TAR/TIR count
+    // reads at a specific indel tier that can exceed the DP-field count.
     if get("TAR").is_some() || get("TIR").is_some() {
         let ref_count = get("TAR").and_then(first_num);
         let alt_count = get("TIR").and_then(first_num);
+        let sum_tar_tir = ref_count.zip(alt_count).map(|(r, a)| r + a);
+        let total = match (dp, sum_tar_tir) {
+            (Some(d), Some(s)) => Some(d.max(s)),
+            (Some(d), None)    => Some(d),
+            (None, Some(s))    => Some(s),
+            (None, None)       => None,
+        };
         return AlleleDepth {
             ref_count,
             alt_count,
-            total_depth: dp,
+            total_depth: total,
         };
     }
 
