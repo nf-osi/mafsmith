@@ -112,11 +112,24 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             None => vec![],
         };
 
-        // Drop variants with no CSQ annotation, matching vcf2maf.pl --inhibit-vep behavior.
-        // This handles CNV and other SV types that fastVEP doesn't annotate.
+        // Unannotated variants: vcf2maf.pl emits a Targeted_Region row for recognized SV types
+        // (BND/TRA/DEL/DUP/INV) even without CSQ, but drops CNV and other unrecognized types.
+        let default_entry: Option<CsqEntry> = if entries.is_empty() {
+            match rec.info_field("SVTYPE") {
+                Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV") => {
+                    Some(CsqEntry::default())
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let transcript: &CsqEntry = match select_transcript(&entries, custom_enst.as_ref()) {
             Some(t) => t,
-            None => return Ok(vec![]),
+            None => match &default_entry {
+                Some(e) => e,
+                None => return Ok(vec![]),
+            },
         };
 
         let fk: Vec<&str> = rec.format_keys.iter().map(|s| s.as_str()).collect();
@@ -183,13 +196,15 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // using samtools faidx to fetch the reference base at the partner location.
         // We replicate this by reading the FASTA index (.fai) directly.
         let sv_secondary: Option<(String, u64, String)> = if is_sv_to_split && effective_alt.starts_with('<') {
-            let chr2_end = if let Some(chr2) = rec.info_field("CHR2").filter(|s| !s.is_empty()) {
-                rec.info_field("END")
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .map(|end_val| (chr2.to_owned(), end_val))
-            } else {
-                raw_sv_alt.as_deref().and_then(parse_bnd_alt)
-            };
+            // CHR2 defaults to the same chromosome when absent (vcf2maf.pl behavior for DEL/DUP/INV).
+            let chr2 = rec.info_field("CHR2")
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_owned())
+                .unwrap_or_else(|| rec.chrom.clone());
+            let chr2_end = rec.info_field("END")
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|end_val| (chr2, end_val))
+                .or_else(|| raw_sv_alt.as_deref().and_then(parse_bnd_alt));
             chr2_end.map(|(chr2, end_val)| {
                 let ref2 = sv_ref_fasta.as_deref()
                     .and_then(|fa| fasta_fetch_base(fa, &chr2, end_val))
