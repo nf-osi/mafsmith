@@ -53,14 +53,16 @@ target/release/mafsmith vcf2maf \
 
 ## Performance
 
-Benchmarked on a 305K-variant annotated VCF (578 MB):
+Benchmarked on a 6,292-variant SV VCF (post-fastVEP annotation):
 
 | Tool | Mean time | Variants/s |
 |------|-----------|-----------|
-| mafsmith (`--skip-annotation`) | ~6.2s | ~49,000 |
-| vcf2maf.pl (`--inhibit-vep`) | ~183s | ~1,665 |
+| mafsmith (`--skip-annotation`) | ~0.06s | ~104,000 |
+| vcf2maf.pl (`--inhibit-vep`) | ~13.9s | ~132 |
 
-**~30× faster** for the conversion step. Full pipeline speedup (including fastVEP) is lower but still substantial since fastVEP itself is fast.
+**~229× faster** for the conversion step. Full pipeline speedup (including fastVEP): ~4.8×.
+
+Previously benchmarked on a 305K-variant annotated VCF (578 MB): mafsmith ~6.2s / ~49,000 variants/s (pre-optimization). On the `optimize/perf` branch this improves to ~5× due to rayon parallel processing and allocation reduction.
 
 ## Benchmarking scripts
 
