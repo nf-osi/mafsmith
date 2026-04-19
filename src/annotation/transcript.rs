@@ -58,14 +58,11 @@ pub fn select_transcript<'a>(
 
     // Sort by biotype priority → consequence severity → transcript length (longest wins).
     let mut sorted: Vec<&'a CsqEntry> = candidates;
-    sorted.sort_by_key(|e| {
-        let csq_refs: Vec<&str> = e.consequences.iter().map(|s| s.as_str()).collect();
-        (
-            biotype_rank(&e.biotype),
-            consequence_severity(&csq_refs),
-            -(e.transcript_length as i64),
-        )
-    });
+    sorted.sort_by_key(|e| (
+        biotype_rank(&e.biotype),
+        consequence_severity(&e.consequences),  // generic: &[String] works directly
+        -(e.transcript_length as i64),
+    ));
 
     // Find the "worst affected gene": first sorted entry with a non-empty gene symbol.
     let maf_gene: Option<&str> = sorted

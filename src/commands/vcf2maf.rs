@@ -11,8 +11,10 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use flate2::read::MultiGzDecoder;
+use rayon::prelude::*;
 use std::{
     collections::HashSet,
+    fmt::Write as FmtWrite,
     fs,
     io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -88,21 +90,29 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     let tumor_barcode = args.tumor_id.as_deref().unwrap_or(tumor_col.as_deref().unwrap_or("TUMOR"));
     let normal_barcode = args.normal_id.as_deref().unwrap_or(normal_col.as_deref().unwrap_or("NORMAL"));
 
-    let mut process_record = |rec: &crate::vcf::VcfRecord| -> Result<()> {
-        let csq_val = rec.csq_value().map(|v| v.to_owned());
-        let entries = match &csq_val {
+    // Pre-compute sample column indices once so each record avoids a linear name scan.
+    let tumor_idx = tumor_col.as_deref()
+        .and_then(|col| sample_names.iter().position(|s| s == col));
+    let normal_idx = normal_col.as_deref()
+        .and_then(|col| sample_names.iter().position(|s| s == col));
+
+    // Convert one VCF record to MAF row(s). Returns Vec with optional secondary SV row first.
+    let convert_record = |rec: &crate::vcf::VcfRecord| -> Result<Vec<MafRecord>> {
+        let csq_value = rec.csq_value();
+        let has_csq = csq_value.is_some();
+        let entries = match csq_value {
             Some(v) => csq_format.parse_all(v, &args.retain_ann),
             None => vec![],
         };
 
         // Unannotated records (e.g. SVs without CSQ) are emitted with Targeted_Region,
         // matching vcf2maf.pl which never silently drops variants.
-        let default_entry = if csq_val.is_none() { Some(CsqEntry::default()) } else { None };
+        let default_entry = if !has_csq { Some(CsqEntry::default()) } else { None };
         let transcript: &CsqEntry = match select_transcript(&entries, custom_enst.as_ref()) {
             Some(t) => t,
             None => match &default_entry {
                 Some(e) => e,
-                None => return Ok(()),
+                None => return Ok(vec![]),
             },
         };
 
@@ -113,9 +123,8 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // - GT is all-ref or missing (hom-ref call in GVCF / no-call): pick the alt with the
         //   highest read depth in AD. vcf2maf.pl uses the same highest-depth fallback, which
         //   is why multi-allelic GVCF sites can differ from simply defaulting to ALT1.
-        let (effective_alt, effective_alt_vcf_idx) = tumor_col
-            .as_deref()
-            .and_then(|col| rec.sample_values(col))
+        let (effective_alt, effective_alt_vcf_idx) = tumor_idx
+            .and_then(|idx| rec.sample_fields_by_idx(idx))
             .and_then(|vals| {
                 let gt_idx = fk.iter().position(|&k| k == "GT")?;
                 let gt = vals.get(gt_idx)?;
@@ -190,20 +199,15 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         };
 
         // Allele depths — use effective alt index for correct AD field in multi-allelic records.
-        let tumor_depth = tumor_col
-            .as_deref()
-            .and_then(|col| rec.sample_values(col))
-            .map(|vals| {
-                extract_depth(&fk, &vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx)
-            });
-        let normal_depth = normal_col
-            .as_deref()
-            .and_then(|col| rec.sample_values(col))
+        let tumor_depth = tumor_idx
+            .and_then(|idx| rec.sample_fields_by_idx(idx))
+            .map(|vals| extract_depth(&fk, &vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
+        let normal_depth = normal_idx
+            .and_then(|idx| rec.sample_fields_by_idx(idx))
             .map(|vals| extract_depth(&fk, &vals, &rec.ref_allele, &rec.alt_allele, 1));
 
-        let csq_refs: Vec<&str> = transcript.consequences.iter().map(|s| s.as_str()).collect();
         let var_class =
-            so_to_variant_classification(&csq_refs, &norm.ref_allele, &norm.alt_allele);
+            so_to_variant_classification(&transcript.consequences, &norm.ref_allele, &norm.alt_allele);
         let var_type = variant_type(&norm.ref_allele, &norm.alt_allele);
 
         // dbSNP: pull from Existing_variation or ID column
@@ -215,22 +219,19 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             String::new()
         };
 
-        // all_effects: semicolon-separated list for every annotated transcript
-        let all_effects = entries
-            .iter()
-            .filter(|e| !e.feature.is_empty())
-            .map(|e| {
-                let csq_r: Vec<&str> = e.consequences.iter().map(|s| s.as_str()).collect();
-                format!(
-                    "{},{},{},{}",
-                    e.symbol,
-                    e.consequences.join("&"),
-                    so_to_variant_classification(&csq_r, &rec.ref_allele, &rec.alt_allele),
-                    e.hgvsp
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(";");
+        // all_effects: semicolon-separated list for every annotated transcript.
+        // Build directly into a String to avoid intermediate Vec<String> + join allocation.
+        let mut all_effects = String::new();
+        for e in entries.iter().filter(|e| !e.feature.is_empty()) {
+            if !all_effects.is_empty() { all_effects.push(';'); }
+            let cls = so_to_variant_classification(&e.consequences, &rec.ref_allele, &rec.alt_allele);
+            write!(all_effects, "{},", e.symbol).unwrap();
+            for (i, csq) in e.consequences.iter().enumerate() {
+                if i > 0 { all_effects.push('&'); }
+                all_effects.push_str(csq);
+            }
+            write!(all_effects, ",{},{}", cls, e.hgvsp).unwrap();
+        }
 
         let hgvsp_short = if transcript.hgvsp.is_empty() && var_class == "Splice_Site" {
             splice_hgvsp_short(&transcript.hgvsc)
@@ -246,9 +247,8 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // Tumor_Seq_Allele1: sort GT allele indices and use the smallest, matching vcf2maf.
         // 0/1 or 1|0 → min=0 → ref; 1/1 → min=1 → alt; missing GT → alt.
         // GT=1/2 or 0/2 with multi-allelic: the "other" GT allele drives Tumor_Seq_Allele1.
-        let tumor_seq_allele1 = tumor_col
-            .as_deref()
-            .and_then(|col| rec.sample_values(col))
+        let tumor_seq_allele1 = tumor_idx
+            .and_then(|idx| rec.sample_fields_by_idx(idx))
             .and_then(|vals| {
                 let gt_idx = fk.iter().position(|&k| k == "GT")?;
                 let gt = vals.get(gt_idx)?;
@@ -369,14 +369,13 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             ..Default::default()
         };
 
-        // Emit secondary SV breakpoint row first (matches vcf2maf.pl output order).
+        // Build output: secondary SV breakpoint row first (matches vcf2maf.pl output order).
+        let mut output = Vec::with_capacity(2);
         if let Some((chr2, bnd_pos, ref2)) = &sv_secondary {
             let sec_norm = normalize(*bnd_pos, ref2, &effective_alt);
             let (sec_start, sec_end) = maf_positions(&sec_norm);
-            let sec_csq_refs: Vec<&str> = transcript.consequences.iter().map(|s| s.as_str()).collect();
-            let sec_var_class = so_to_variant_classification(&sec_csq_refs, &sec_norm.ref_allele, &sec_norm.alt_allele);
+            let sec_var_class = so_to_variant_classification(&transcript.consequences, &sec_norm.ref_allele, &sec_norm.alt_allele);
             let sec_var_type = variant_type(&sec_norm.ref_allele, &sec_norm.alt_allele);
-            // Derive secondary TSA1: same GT decision as primary, but using secondary ref/alt alleles.
             let sec_tsa1 = if tumor_seq_allele1 == norm.ref_allele {
                 sec_norm.ref_allele.clone()
             } else {
@@ -393,18 +392,47 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             secondary.tumor_seq_allele2 = sec_norm.alt_allele.clone();
             secondary.match_norm_seq_allele1 = sec_norm.ref_allele.clone();
             secondary.match_norm_seq_allele2 = sec_norm.ref_allele.clone();
-            writer.write_record(&secondary)?;
+            output.push(secondary);
         }
+        output.push(record);
+        Ok(output)
+    };
 
-        writer.write_record(&record)?;
+    // Parallel batch processing: read records in chunks, convert in parallel, write sequentially.
+    // Preserves output order while utilizing all CPU cores for the conversion work.
+    const BATCH: usize = 50_000;
+    let mut batch: Vec<crate::vcf::VcfRecord> = Vec::with_capacity(BATCH);
+
+    let drain = |batch: &[crate::vcf::VcfRecord], writer: &mut MafWriter<BufWriter<fs::File>>| -> Result<()> {
+        let results: Vec<Result<Vec<MafRecord>>> = batch
+            .par_iter()
+            .map(|rec| convert_record(rec))
+            .collect();
+        for result in results {
+            for maf_rec in result? {
+                writer.write_record(&maf_rec)?;
+            }
+        }
         Ok(())
     };
 
     if let Some(rec) = first_rec {
-        process_record(&rec)?;
+        batch.push(rec);
     }
-    while let Some(rec) = vcf.next_record()? {
-        process_record(&rec)?;
+    loop {
+        match vcf.next_record()? {
+            Some(rec) => {
+                batch.push(rec);
+                if batch.len() >= BATCH {
+                    drain(&batch, &mut writer)?;
+                    batch.clear();
+                }
+            }
+            None => break,
+        }
+    }
+    if !batch.is_empty() {
+        drain(&batch, &mut writer)?;
     }
 
     writer.flush()?;

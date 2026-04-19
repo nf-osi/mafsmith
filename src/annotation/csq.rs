@@ -159,8 +159,12 @@ fn strip_hgvs_prefix(s: &str) -> String {
 /// e.g. "p.Glu123Lys" → "p.E123K"
 pub fn shorten_hgvsp(hgvsp: &str) -> String {
     let mut result = hgvsp.to_owned();
-    for (three, one) in THREE_TO_ONE {
-        result = result.replace(three, one);
+    for &(three, one) in THREE_TO_ONE {
+        // contains() check avoids allocating a new String when there's no match,
+        // since str::replace always allocates even on zero matches.
+        if result.contains(three) {
+            result = result.replace(three, one);
+        }
     }
     result
 }

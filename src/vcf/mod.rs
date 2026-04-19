@@ -1,5 +1,7 @@
 pub mod normalization;
 
+use std::sync::Arc;
+
 /// A minimally parsed VCF record — we parse the raw VCF lines ourselves
 /// rather than relying on noodles here, so we can handle the heterogeneous
 /// FORMAT fields from multiple callers without schema enforcement.
@@ -15,20 +17,22 @@ pub struct VcfRecord {
     pub filter: String,
     pub info: String,
     pub format_keys: Vec<String>,
-    pub samples: Vec<Vec<String>>,
-    pub sample_names: Vec<String>,
+    /// Raw sample column strings ("GT:AD:DP" form), one per sample, split on demand.
+    pub samples_raw: Vec<String>,
+    /// Shared across all records from the same VCF — clone is an Arc refcount bump.
+    pub sample_names: Arc<Vec<String>>,
 }
 
 impl VcfRecord {
-    pub fn sample_values(&self, name: &str) -> Option<Vec<&str>> {
+    /// Return split fields for the named sample column. Splits on demand (no eager parse).
+    pub fn sample_values<'a>(&'a self, name: &str) -> Option<Vec<&'a str>> {
         let idx = self.sample_names.iter().position(|s| s == name)?;
-        Some(
-            self.samples
-                .get(idx)?
-                .iter()
-                .map(|s| s.as_str())
-                .collect(),
-        )
+        Some(self.samples_raw.get(idx)?.split(':').collect())
+    }
+
+    /// Return split fields for a sample by pre-computed index (avoids name linear scan).
+    pub fn sample_fields_by_idx(&self, idx: usize) -> Option<Vec<&str>> {
+        Some(self.samples_raw.get(idx)?.split(':').collect())
     }
 
     /// Look up a single INFO field value (handles both FLAG and KEY=VALUE).
@@ -57,6 +61,7 @@ pub struct VcfReader<R: std::io::BufRead> {
     reader: R,
     pub header_lines: Vec<String>,
     pub sample_names: Vec<String>,
+    sample_names_arc: Arc<Vec<String>>,
     initialized: bool,
 }
 
@@ -66,6 +71,7 @@ impl<R: std::io::BufRead> VcfReader<R> {
             reader,
             header_lines: Vec::new(),
             sample_names: Vec::new(),
+            sample_names_arc: Arc::new(Vec::new()),
             initialized: false,
         }
     }
@@ -87,6 +93,7 @@ impl<R: std::io::BufRead> VcfReader<R> {
                 if cols.len() > 9 {
                     self.sample_names = cols[9..].iter().map(|s| s.to_string()).collect();
                 }
+                self.sample_names_arc = Arc::new(self.sample_names.clone());
                 self.header_lines.push(trimmed);
                 break;
             }
@@ -125,13 +132,11 @@ impl<R: std::io::BufRead> VcfReader<R> {
             let filter = cols[6].to_owned();
             let info = cols[7].to_owned();
 
-            let (format_keys, samples) = if cols.len() > 8 {
+            let (format_keys, samples_raw) = if cols.len() > 8 {
                 let keys: Vec<String> = cols[8].split(':').map(|s| s.to_owned()).collect();
-                let samp: Vec<Vec<String>> = cols[9..]
-                    .iter()
-                    .map(|s| s.split(':').map(|v| v.to_owned()).collect())
-                    .collect();
-                (keys, samp)
+                // Store each sample column as a single raw string; split on demand in sample_fields_by_idx.
+                let raw: Vec<String> = cols[9..].iter().map(|s| s.to_string()).collect();
+                (keys, raw)
             } else {
                 (vec![], vec![])
             };
@@ -147,8 +152,9 @@ impl<R: std::io::BufRead> VcfReader<R> {
                 filter,
                 info,
                 format_keys,
-                samples,
-                sample_names: self.sample_names.clone(),
+                samples_raw,
+                // Arc clone is a single atomic refcount increment — no heap allocation.
+                sample_names: Arc::clone(&self.sample_names_arc),
             }));
         }
     }
