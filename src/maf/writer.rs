@@ -4,7 +4,6 @@ use std::io::Write;
 
 pub struct MafWriter<W: Write> {
     inner: W,
-    extra_columns: Vec<String>,
 }
 
 impl<W: Write> MafWriter<W> {
@@ -14,10 +13,7 @@ impl<W: Write> MafWriter<W> {
         let extra_refs: Vec<&str> = extra_columns.iter().map(|s| s.as_str()).collect();
         headers.extend_from_slice(&extra_refs);
         writeln!(inner, "{}", headers.join("\t"))?;
-        Ok(Self {
-            inner,
-            extra_columns,
-        })
+        Ok(Self { inner })
     }
 
     pub fn write_record(&mut self, record: &MafRecord) -> Result<()> {

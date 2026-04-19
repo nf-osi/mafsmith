@@ -2,7 +2,7 @@ use crate::cli::Vcf2vcfArgs;
 use anyhow::{Context, Result};
 use std::{
     fs,
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufReader, BufWriter, Write},
 };
 use tracing::info;
 
@@ -14,7 +14,7 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
     let out_file = fs::File::create(&args.output_vcf)
         .with_context(|| format!("Cannot create {}", args.output_vcf.display()))?;
 
-    let mut reader = BufReader::new(in_file);
+    let reader = BufReader::new(in_file);
     let mut writer = BufWriter::new(out_file);
 
     let mut vcf = crate::vcf::VcfReader::new(reader);

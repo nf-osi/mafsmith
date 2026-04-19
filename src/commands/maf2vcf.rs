@@ -11,7 +11,7 @@ pub async fn run(args: Maf2vcfArgs) -> Result<()> {
     let data_dir = crate::commands::fetch::data_dir(None)?;
     let genome_str = args.genome.ncbi_build();
 
-    let ref_fasta = args.ref_fasta.unwrap_or_else(|| {
+    let _ref_fasta = args.ref_fasta.unwrap_or_else(|| {
         data_dir.join(genome_str).join("reference.fa")
     });
 

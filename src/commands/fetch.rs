@@ -188,11 +188,13 @@ async fn download_file(url: &str, dest: &Path) -> Result<()> {
 }
 
 fn decompress_gz(src: &Path, dest: &Path) -> Result<()> {
-    use flate2::read::GzDecoder;
+    use flate2::read::MultiGzDecoder;
     use std::io::BufReader;
 
     let file = fs::File::open(src).with_context(|| format!("Cannot open {}", src.display()))?;
-    let mut decoder = GzDecoder::new(BufReader::new(file));
+    // MultiGzDecoder reads all concatenated gzip members — required for genome FASTAs which
+    // are typically multi-member gzip (one per chromosome, concatenated).
+    let mut decoder = MultiGzDecoder::new(BufReader::new(file));
     let mut out = fs::File::create(dest)
         .with_context(|| format!("Cannot create {}", dest.display()))?;
     std::io::copy(&mut decoder, &mut out)?;

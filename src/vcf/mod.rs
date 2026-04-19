@@ -9,7 +9,8 @@ pub struct VcfRecord {
     pub pos: u64,    // 1-based
     pub id: String,
     pub ref_allele: String,
-    pub alt_allele: String, // first ALT only
+    pub alt_allele: String,      // first ALT only (used throughout pipeline)
+    pub all_alts: Vec<String>,   // all ALT alleles for multi-allelic GT handling
     pub qual: String,
     pub filter: String,
     pub info: String,
@@ -70,7 +71,6 @@ impl<R: std::io::BufRead> VcfReader<R> {
     }
 
     fn init(&mut self) -> anyhow::Result<()> {
-        use std::io::BufRead;
         let mut line = String::new();
         loop {
             line.clear();
@@ -83,7 +83,7 @@ impl<R: std::io::BufRead> VcfReader<R> {
                 self.header_lines.push(trimmed);
             } else if trimmed.starts_with('#') {
                 // #CHROM line
-                let cols: Vec<&str> = trimmed.splitn(10, '\t').collect();
+                let cols: Vec<&str> = trimmed.split('\t').collect();
                 if cols.len() > 9 {
                     self.sample_names = cols[9..].iter().map(|s| s.to_string()).collect();
                 }
@@ -97,7 +97,6 @@ impl<R: std::io::BufRead> VcfReader<R> {
 
     /// Read the next VCF record. Returns None at EOF.
     pub fn next_record(&mut self) -> anyhow::Result<Option<VcfRecord>> {
-        use std::io::BufRead;
         if !self.initialized {
             self.init()?;
         }
@@ -112,7 +111,7 @@ impl<R: std::io::BufRead> VcfReader<R> {
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
-            let cols: Vec<&str> = trimmed.splitn(10, '\t').collect();
+            let cols: Vec<&str> = trimmed.split('\t').collect();
             if cols.len() < 8 {
                 continue;
             }
@@ -120,8 +119,8 @@ impl<R: std::io::BufRead> VcfReader<R> {
             let pos: u64 = cols[1].parse().unwrap_or(0);
             let id = cols[2].to_owned();
             let ref_allele = cols[3].to_owned();
-            // Take only first ALT allele
-            let alt_allele = cols[4].split(',').next().unwrap_or(".").to_owned();
+            let all_alts: Vec<String> = cols[4].split(',').map(|s| s.to_owned()).collect();
+            let alt_allele = all_alts[0].clone();
             let qual = cols[5].to_owned();
             let filter = cols[6].to_owned();
             let info = cols[7].to_owned();
@@ -143,6 +142,7 @@ impl<R: std::io::BufRead> VcfReader<R> {
                 id,
                 ref_allele,
                 alt_allele,
+                all_alts,
                 qual,
                 filter,
                 info,

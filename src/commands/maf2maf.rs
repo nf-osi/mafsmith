@@ -1,6 +1,5 @@
 use crate::cli::Maf2mafArgs;
 use anyhow::Result;
-use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use tracing::info;
 
@@ -10,7 +9,7 @@ use tracing::info;
 pub async fn run(args: Maf2mafArgs) -> Result<()> {
     info!("maf2maf: converting input MAF to intermediate VCF...");
     let intermediate_vcf = NamedTempFile::new()?;
-    let intermediate_maf = NamedTempFile::new()?;
+    let _intermediate_maf = NamedTempFile::new()?;
 
     crate::commands::maf2vcf::run(crate::cli::Maf2vcfArgs {
         input_maf: args.input_maf,
@@ -37,6 +36,7 @@ pub async fn run(args: Maf2mafArgs) -> Result<()> {
         maf_center: String::new(),
         min_hom_vaf: 0.0,
         retain_ann: vec![],
+        skip_annotation: false,
     })
     .await?;
 

@@ -23,11 +23,15 @@ impl AlleleDepth {
 /// - SomaticSniper: DP4=ref_fwd,ref_rev,alt_fwd,alt_rev
 /// - Ion Torrent: RO=ref, AO=alt
 /// - Total depth fallback: DP
+///
+/// `alt_vcf_idx`: 1-based VCF allele index of the selected ALT (1 = first ALT, 2 = second, …).
+/// This is used as the AD array index for the alt count in multi-allelic records.
 pub fn extract_depth(
     format_keys: &[&str],
     sample_values: &[&str],
     ref_allele: &str,
     alt_allele: &str,
+    alt_vcf_idx: usize,
 ) -> AlleleDepth {
     let get = |key: &str| -> Option<&str> {
         format_keys
@@ -37,7 +41,6 @@ pub fn extract_depth(
             .filter(|v| !v.is_empty() && *v != ".")
     };
 
-    let parse_u32 = |s: &str| s.parse::<u32>().ok();
     let first_num = |s: &str| s.split(',').next().and_then(|v| v.parse::<u32>().ok());
 
     // DP (total depth) — used as fallback
@@ -49,14 +52,18 @@ pub fn extract_depth(
         let raw: Vec<&str> = ad_str.split(',').collect();
         if raw.len() >= 2 {
             let ref_count: Option<u32> = raw[0].parse().ok();
-            let alt_count: Option<u32> = raw[1].parse().ok();
+            // Use alt_vcf_idx to pick the correct AD field for multi-allelic records.
+            let alt_count: Option<u32> = raw.get(alt_vcf_idx).and_then(|v| v.parse().ok());
             // Accept even if one side is unknown ("."), as long as we parsed something
             if ref_count.is_some() || alt_count.is_some() {
-                let sum = ref_count.unwrap_or(0) + alt_count.unwrap_or(0);
+                // For multi-allelic AD (ref,alt1,alt2,...), sum all values for total depth.
+                // This matches vcf2maf behavior where all allele counts contribute to depth.
+                let ad_total: u32 = raw.iter().filter_map(|v| v.parse::<u32>().ok()).sum();
+                let total = dp.or(if ad_total > 0 { Some(ad_total) } else { None });
                 return AlleleDepth {
                     ref_count,
                     alt_count,
-                    total_depth: dp.or(if sum > 0 { Some(sum) } else { None }),
+                    total_depth: total,
                 };
             }
         }
@@ -169,17 +176,27 @@ mod tests {
     fn standard_ad() {
         let keys = vec!["GT", "AD", "DP"];
         let vals = vec!["0/1", "45,12", "57"];
-        let d = extract_depth(&keys, &vals, "A", "T");
+        let d = extract_depth(&keys, &vals, "A", "T", 1);
         assert_eq!(d.ref_count, Some(45));
         assert_eq!(d.alt_count, Some(12));
         assert_eq!(d.total_depth, Some(57));
     }
 
     #[test]
+    fn multiallelic_ad_second_alt() {
+        let keys = vec!["GT", "AD", "DP"];
+        let vals = vec!["0/2", "10,5,8", "23"];
+        let d = extract_depth(&keys, &vals, "A", "G", 2);
+        assert_eq!(d.ref_count, Some(10));
+        assert_eq!(d.alt_count, Some(8));
+        assert_eq!(d.total_depth, Some(23));
+    }
+
+    #[test]
     fn varscan() {
         let keys = vec!["GT", "RD", "AD", "DP"];
         let vals = vec!["0/1", "30", "10", "40"];
-        let d = extract_depth(&keys, &vals, "A", "T");
+        let d = extract_depth(&keys, &vals, "A", "T", 1);
         assert_eq!(d.ref_count, Some(30));
         assert_eq!(d.alt_count, Some(10));
     }
@@ -188,7 +205,7 @@ mod tests {
     fn dp4() {
         let keys = vec!["GT", "DP4"];
         let vals = vec!["0/1", "10,20,5,3"];
-        let d = extract_depth(&keys, &vals, "A", "T");
+        let d = extract_depth(&keys, &vals, "A", "T", 1);
         assert_eq!(d.ref_count, Some(30));
         assert_eq!(d.alt_count, Some(8));
     }

@@ -96,6 +96,10 @@ pub struct Vcf2mafArgs {
     /// Retain extra VEP annotation fields in output (comma-separated CSQ field names)
     #[arg(long, value_delimiter = ',')]
     pub retain_ann: Vec<String>,
+
+    /// Skip fastVEP annotation (input VCF must already contain CSQ annotations)
+    #[arg(long, default_value_t = false)]
+    pub skip_annotation: bool,
 }
 
 #[derive(Args, Debug)]

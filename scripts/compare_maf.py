@@ -10,7 +10,6 @@ Reports mismatches for a configurable set of columns.
 """
 
 import argparse
-import csv
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -94,7 +93,11 @@ def variant_key(row: dict) -> tuple:
 
 
 def normalize_hgvsp(s: str) -> str:
-    """Normalize HGVSp: p.Ter → p.*, Ala → A, etc., for lenient comparison."""
+    """Normalize HGVSp: p.Ter → p.*, Ala → A, etc., for lenient comparison.
+
+    Keep in sync with shorten_hgvsp / THREE_TO_ONE in src/annotation/csq.rs.
+    Note: Rust has Xle→J which is absent here (no practical impact for comparison).
+    """
     three_to_one = {
         "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C",
         "Gln": "Q", "Glu": "E", "Gly": "G", "His": "H", "Ile": "I",
@@ -108,13 +111,9 @@ def normalize_hgvsp(s: str) -> str:
     return result
 
 
-def compare(ref_path: Path, got_path: Path, exact_cols, lenient_cols, skip_cols,
-            sample_name: str = None) -> dict:
-    """
-    Compare two MAF files. Returns a summary dict with mismatch counts and details.
-    """
-    ref_headers, ref_rows = read_maf(ref_path)
-    got_headers, got_rows = read_maf(got_path)
+def compare(ref_path: Path, got_path: Path, exact_cols, lenient_cols, skip_cols) -> dict:
+    _, ref_rows = read_maf(ref_path)
+    _, got_rows = read_maf(got_path)
 
     # Index reference rows by variant key
     ref_by_key: dict[tuple, dict] = {}
@@ -160,9 +159,9 @@ def compare(ref_path: Path, got_path: Path, exact_cols, lenient_cols, skip_cols,
                     "ref": ref_row.get(col, ""),
                 })
 
+    got_keys = {variant_key(r) for r in got_rows}
     for ref_row in ref_rows:
         k = variant_key(ref_row)
-        got_keys = {variant_key(r) for r in got_rows}
         if k not in got_keys:
             missing_in_got.append(k)
 
@@ -176,7 +175,7 @@ def compare(ref_path: Path, got_path: Path, exact_cols, lenient_cols, skip_cols,
     }
 
 
-def print_report(result: dict, verbose: bool = False):
+def print_report(result: dict):
     print(f"\n{'='*60}")
     print(f"Reference rows:  {result['ref_count']}")
     print(f"mafsmith rows:   {result['got_count']}")
@@ -228,14 +227,13 @@ def main():
     parser.add_argument("mafsmith", type=Path, help="mafsmith output MAF")
     parser.add_argument("--extra-exact", nargs="*", default=[], help="Additional columns to compare exactly")
     parser.add_argument("--skip", nargs="*", default=[], help="Additional columns to skip")
-    parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
     skip = SKIP_COLUMNS | set(args.skip)
     exact = EXACT_COLUMNS + args.extra_exact
 
     result = compare(args.reference, args.mafsmith, exact, LENIENT_COLUMNS, skip)
-    ok = print_report(result, verbose=args.verbose)
+    ok = print_report(result)
     sys.exit(0 if ok else 1)
 
 
