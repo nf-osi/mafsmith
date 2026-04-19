@@ -10,8 +10,13 @@ pub fn so_to_variant_classification(
         let a = alt_allele.len();
         r != a && (r.abs_diff(a)) % 3 == 0
     };
-    // Walk consequences in SO priority order; first match wins.
-    for csq in consequences {
+    // Sort consequences by severity so the most impactful term is classified first.
+    // fastVEP (and VEP) can emit '&'-joined multi-consequence strings where the order
+    // does not reflect severity (e.g. "feature_truncation&splice_acceptor_variant").
+    // vcf2maf.pl sorts by GetEffectPriority before classifying, so we must do the same.
+    let mut sorted = consequences.to_vec();
+    sorted.sort_by_key(|&c| consequence_severity(&[c]));
+    for csq in &sorted {
         let cls = match *csq {
             "splice_acceptor_variant" | "splice_donor_variant"
             | "transcript_ablation" | "exon_loss_variant" => "Splice_Site",
