@@ -1,0 +1,28 @@
+##fileformat=VCFv4.2
+##reference=GRCh38
+##contig=<ID=21,length=46709983>
+##contig=<ID=1,length=248956422>
+##contig=<ID=2,length=242193529>
+##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from fastVEP. Format: Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|EXON|INTRON|HGVSc|HGVSp|cDNA_position|CDS_position|Protein_position|Amino_acids|Codons|Existing_variation|DISTANCE|STRAND|FLAGS|SYMBOL_SOURCE|HGNC_ID|CANONICAL|TSL|SIFT|PolyPhen">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+##INFO=<ID=CHR2,Number=1,Type=String,Description="Chromosome for END coordinate in translocations">
+##INFO=<ID=SVLEN,Number=.,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth">
+##FORMAT=<ID=PR,Number=R,Type=Integer,Description="Spanning paired-read support for the ref and alt alleles">
+##FORMAT=<ID=SR,Number=R,Type=Integer,Description="Split reads support for the ref and alt alleles">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	test_tumor	test_normal
+21	34792292	rs2056450952	A	C	.	PASS	CSQ=C|missense_variant|MODERATE|RUNX1|ENSG00000159216|Transcript|ENST00000344691|protein_coding|9/11||c.1202T>G|p.Leu401Arg|1394/4827|1202/1359|401/452|L/R|cTg/cGg|rs2056450952||-1||HGNC|HGNC:10471|||deleterious_low_confidence(0)|,C|missense_variant|MODERATE|RUNX1|ENSG00000159216|Transcript|ENST00000675419|protein_coding|9/9||c.1286T>G|p.Leu429Arg|1480/5971|1286/1443|429/480|L/R|cTg/cGg|rs2056450952||-1||HGNC|HGNC:10471|YES||deleterious_low_confidence(0)|	GT:AD:DP	0/1:45,21:66	0/0:30,0:30
+21	34880555	.	A	ACCTCTT	.	PASS	CSQ=CCTCTT|splice_donor_variant|HIGH|RUNX1|ENSG00000159216|Transcript|ENST00000675419|protein_coding||5/8|c.504_508+1dup|||||||rs2056450952||-1||HGNC|HGNC:10471|YES||||	GT:AD:DP	0/1:658,225:883	0/0:343,0:343
+21	34880650	.	T	TG	.	PASS	CSQ=G|frameshift_variant|HIGH|RUNX1|ENSG00000159216|Transcript|ENST00000675419|protein_coding|5/9||c.414_415insC|p.Asn139GlnfsTer5|608-609/5971|414-415/1443|138-139/480|-/X|-/C|||-1||HGNC|HGNC:10471|YES||||	GT:AD:DP	0/1:449,162:611	0/0:527,1:528
+21	41479182	.	GT	G	.	PASS	CSQ=-|frameshift_variant|HIGH|TMPRSS2|ENSG00000184012|Transcript|ENST00000332149|protein_coding|7/14||c.672del|p.Lys224AsnfsTer19|806/3450|672/1479|224/492|K/X|aaA/aa|||-1||HGNC|HGNC:11876|YES||||	GT:AD:DP	0/1:435,77:512	0/0:695,0:695
+21	41479219	.	C	T	.	PASS	CSQ=T|synonymous_variant|LOW|TMPRSS2|ENSG00000184012|Transcript|ENST00000332149|protein_coding|7/14||c.636G>A|p.Leu212=|770/3450|636/1479|212/492|L|ctG/ctA|||-1||HGNC|HGNC:11876|YES||||	GT:AD:DP	0/1:782,373:1224	0/0:996,0:1044
+21	44237111	.	C	T	.	PASS	CSQ=T|stop_gained|HIGH|ICOSLG|ENSG00000160223|Transcript|ENST00000407780|protein_coding|3/7||c.162G>A|p.Trp54Ter|288/7078|162/909|54/302|W/*|tgG/tgA|||-1||HGNC|HGNC:17087|YES||||	GT:AD:DP	0/1:745,199:944	0/0:596,0:596
+21	34880300	.	G	A,C	.	PASS	CSQ=A|synonymous_variant|LOW|RUNX1|ENSG00000159216|Transcript|ENST00000675419|protein_coding|5/9||c.450G>A|p.Leu150=|594/5971|450/1443|150/480|L|ctG/ctA|||-1||HGNC|HGNC:10471|YES||||,C|missense_variant|MODERATE|RUNX1|ENSG00000159216|Transcript|ENST00000675419|protein_coding|5/9||c.450G>C|p.Leu150Pro|594/5971|450/1443|150/480|L/P|ctG/ctC|||-1||HGNC|HGNC:10471|YES||||	GT:AD:DP	0/0:10,3,25:38	0/0:15,0,0:15
+1	1000000	MantaDEL_1	G	<DEL>	.	PASS	SVTYPE=DEL;END=1010000;CHR2=1;SVLEN=-10000;CSQ=<DEL>|intron_variant|MODIFIER|TESTGENE1|ENSG00000000001|Transcript|ENST00000000001|protein_coding||2/5|||||||||-1||HGNC|HGNC:1|YES||||	GT:PR:SR	0/1:10,8:5,4	0/0:15,0:10,0
+1	2000000	MantaDUP_1	A	<DUP:TANDEM>	.	PASS	SVTYPE=DUP;END=2050000;CHR2=1;SVLEN=50000;CSQ=<DUP:TANDEM>|intron_variant|MODIFIER|TESTGENE2|ENSG00000000002|Transcript|ENST00000000002|protein_coding||3/6|||||||||-1||HGNC|HGNC:2|YES||||	GT:PR:SR	0/1:12,6:6,3	0/0:14,0:8,0
+1	3000000	MantaBND_1	G	G]2:5000000]	.	PASS	SVTYPE=BND;END=3000001;CHR2=2;CSQ=G]2:5000000]|intron_variant|MODIFIER|TESTGENE3|ENSG00000000003|Transcript|ENST00000000003|protein_coding||4/8|ENST00000000003:c.100+500_100+501ins]2:5000000]||||||||-1||HGNC|HGNC:3|YES||||	GT:PR:SR	0/1:8,5:4,3	0/0:10,0:8,0
+1	4000000	MantaBND_2	T	T]2:6000000]	.	PASS	SVTYPE=BND;END=4000001;CSQ=T]2:6000000]|intron_variant|MODIFIER|TESTGENE4|ENSG00000000004|Transcript|ENST00000000004|protein_coding||1/4|||||||||-1||HGNC|HGNC:4|YES||||	GT:PR:SR	0/1:6,4:3,2	0/0:8,0:5,0
+1	5000000	MantaINV_1	A	<INV>	.	PASS	SVTYPE=INV;END=5100000;CHR2=1;SVLEN=100000;CSQ=<INV>|intron_variant|MODIFIER|TESTGENE5|ENSG00000000005|Transcript|ENST00000000005|protein_coding||1/3|||||||||-1||HGNC|HGNC:5|YES||||	GT:PR:SR	0/1:9,7:4,3	0/0:11,0:7,0
