@@ -68,10 +68,19 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             break;
         }
     }
-    let csq_format = csq_format.context(
-        "fastVEP output did not contain a CSQ INFO header. \
-         Was fastVEP run with annotation enabled?",
-    )?;
+    // When --skip-annotation is set and no CSQ header is present, proceed without
+    // annotation: every record will fall through to the Targeted_Region default,
+    // matching vcf2maf.pl --inhibit-vep behavior on unannotated VCFs.
+    let csq_format = if let Some(fmt) = csq_format {
+        fmt
+    } else if args.skip_annotation {
+        CsqFormat::empty()
+    } else {
+        anyhow::bail!(
+            "fastVEP output did not contain a CSQ INFO header. \
+             Was fastVEP run with annotation enabled?"
+        )
+    };
 
     let sample_names = vcf.sample_names.clone();
     let tumor_col = resolve_sample_col(
@@ -98,22 +107,16 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
     // Convert one VCF record to MAF row(s). Returns Vec with optional secondary SV row first.
     let convert_record = |rec: &crate::vcf::VcfRecord| -> Result<Vec<MafRecord>> {
-        let csq_value = rec.csq_value();
-        let has_csq = csq_value.is_some();
-        let entries = match csq_value {
+        let entries = match rec.csq_value() {
             Some(v) => csq_format.parse_all(v, &args.retain_ann),
             None => vec![],
         };
 
-        // Unannotated records (e.g. SVs without CSQ) are emitted with Targeted_Region,
-        // matching vcf2maf.pl which never silently drops variants.
-        let default_entry = if !has_csq { Some(CsqEntry::default()) } else { None };
+        // Drop variants with no CSQ annotation, matching vcf2maf.pl --inhibit-vep behavior.
+        // This handles CNV and other SV types that fastVEP doesn't annotate.
         let transcript: &CsqEntry = match select_transcript(&entries, custom_enst.as_ref()) {
             Some(t) => t,
-            None => match &default_entry {
-                Some(e) => e,
-                None => return Ok(vec![]),
-            },
+            None => return Ok(vec![]),
         };
 
         let fk: Vec<&str> = rec.format_keys.iter().map(|s| s.as_str()).collect();

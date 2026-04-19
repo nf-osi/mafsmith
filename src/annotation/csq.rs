@@ -40,6 +40,13 @@ pub struct CsqFormat {
 }
 
 impl CsqFormat {
+    /// An empty format with no fields — used when no CSQ header is present.
+    /// parse_all() on any record returns an empty Vec, causing unannotated
+    /// variants to be dropped (matching vcf2maf.pl --inhibit-vep behavior).
+    pub fn empty() -> Self {
+        Self { fields: Vec::new(), index: HashMap::new() }
+    }
+
     /// Parse the CSQ FORMAT from a VCF INFO description line.
     ///
     /// VEP encodes the field list in the Description after "Format: "
