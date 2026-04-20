@@ -8,7 +8,7 @@ mafsmith is a Rust reimplementation of [vcf2maf](https://github.com/mskcc/vcf2ma
 
 ## Acknowledgements
 
-mafsmith builds directly on the design, field conventions, and edge-case handling documented in [vcf2maf](https://github.com/mskcc/vcf2maf). Without the years of work by [@ckandoth](https://github.com/ckandoth) (ORCID: [0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)) in understanding and encoding the full complexity of the VCF and MAF specifications, this package would not exist.
+mafsmith is a rust-based adaptation of the design, field conventions, and edge-case handling from [vcf2maf](https://github.com/mskcc/vcf2maf) by [@ckandoth](https://github.com/ckandoth) (ORCID: [0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)).
 
 ## Performance
 
