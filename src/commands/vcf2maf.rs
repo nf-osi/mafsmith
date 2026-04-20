@@ -440,8 +440,10 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 };
                 let needs_depth_fallback = idxs.is_empty() || idxs.iter().all(|&i| i == 0) || all_in_normal_gt;
                 if needs_depth_fallback {
-                    // In strict mode with truncated AD, don't infer hom-alt from depth —
-                    // vcf2maf.pl skips depth-based VAF logic when AD is truncated.
+                    // When GT is a no-call (./.) or hom-ref (0/0), vcf2maf.pl infers
+                    // het vs hom-alt from depth: VAF >= min_hom_vaf → TSA1=alt; else REF.
+                    // This fires for all VCFs (single-sample and paired alike).
+                    // Suppress only when AD is truncated in strict mode.
                     let hom_alt = if tumor_ad_truncated {
                         false
                     } else {
@@ -497,16 +499,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // Only fire when AD has the full complement of allele values (strict count, matching
         // vcf2maf.pl: it skips the override when AD is shorter than expected — e.g. GATK
         // multi-allelic sites where AD is trimmed to only the called allele).
-        // vcf2maf.pl also skips the override when the normal sample GT is a no-call (./.).
-        let normal_has_valid_gt = normal_vals.as_deref()
-            .and_then(|vals| {
-                let gt_idx = rec.format_keys.iter().position(|k| k == "GT")?;
-                vals.get(gt_idx).map(|gt| {
-                    gt.split(|c| c == '/' || c == '|').any(|s| s != "." && s != "")
-                })
-            })
-            .unwrap_or(true); // no normal sample → don't suppress the override
-        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_has_valid_gt {
+        // Suppress for single-sample VCFs (no normal column): vcf2maf.pl skips the override
+        // when there is no matched normal, matching the behavior for absent normal samples.
+        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_col.is_some() {
             if let Some(vals) = tumor_vals.as_deref() {
                 let ad_full = rec.format_keys.iter().position(|k| k == "AD")
                     .and_then(|i| vals.get(i))

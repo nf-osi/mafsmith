@@ -52,6 +52,17 @@ target/release/mafsmith vcf2maf \
 - **SV secondary rows**: mafsmith correctly emits secondary SV breakpoint rows with actual partner chromosome/position. vcf2maf.pl emits them with empty Chromosome (a vcf2maf.pl bug). The `synapse_validate.py` comparison script handles this with best-match selection for key collisions and skips empty-chromosome vcf2maf rows.
 - **Unrecognized symbolic ALTs**: records with `<INS>`, `<CNV>` or other non-BND/TRA/DEL/DUP/INV symbolic ALTs are dropped (matching vcf2maf.pl behavior).
 
+### Validated callers (20k variants each, 0 mismatches in --strict mode)
+
+| Synapse ID | Filename pattern | Caller | VCF type |
+|------------|-----------------|--------|----------|
+| syn31624545 | VA01.vcf.gz | DRAGEN RefCall | single-sample, GT=`./.' or 0/0 |
+| syn64156972 | Hg38_2_024.mt2.Full.vcf | MuTect2 | single-sample GRCh38 |
+| syn31624535 | FreeBayes_VA01.vcf.gz | FreeBayes | single-sample |
+| syn31624939 | Strelka_VA05_variants.vcf.gz | Strelka2 | paired T/N |
+| syn68172710 | patient*.strelka.somatic_indels.vcf.gz | Strelka2 somatic | paired T/N, indel-only |
+| syn21296193 | somaticSV.vcf.gz | SV caller (Manta/DELLY) | SV-only |
+
 ## Performance
 
 Benchmarked on a 6,292-variant SV VCF (post-fastVEP annotation):
