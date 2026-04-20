@@ -4,6 +4,12 @@ Fast, self-contained VCF↔MAF converter with embedded variant annotation.
 
 mafsmith is a Rust reimplementation of [vcf2maf](https://github.com/mskcc/vcf2maf), using [fastVEP](https://github.com/Ensembl/ensembl-vep) for annotation instead of the Perl VEP stack. It produces MAF files that match `vcf2maf.pl --inhibit-vep` output field-for-field.
 
+> **Status:** mafsmith is research software provided as-is. The `vcf2maf` subcommand has been validated against real-world VCFs from multiple callers (see below), but users should verify outputs independently for their use case. The `maf2vcf`, `maf2maf`, and `vcf2vcf` subcommands are experimental and largely untested — use with caution.
+
+## Acknowledgements
+
+mafsmith builds directly on the design, field conventions, and edge-case handling documented in [vcf2maf](https://github.com/mskcc/vcf2maf). Without the years of work by [@ckandoth](https://github.com/ckandoth) (ORCID: [0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)) in understanding and encoding the full complexity of the VCF and MAF specifications, this package would not exist.
+
 ## Performance
 
 Benchmarked on a 6,292-variant SV VCF (post-annotation, conversion step only):
@@ -93,23 +99,18 @@ mafsmith vcf2maf -i input.vcf -o output.maf --genome grch37
 | `--strict` | Match `vcf2maf.pl` exactly for truncated AD arrays (outputs `.` for depth fields instead of partial counts) |
 | `--min-hom-vaf` | VAF threshold for inferring homozygous-alt genotype (default: 0.7) |
 
-### maf2vcf — Convert MAF to VCF
+### maf2vcf, maf2maf, vcf2vcf — Experimental subcommands
+
+> These subcommands are experimental and have not been validated. Use at your own risk.
 
 ```bash
+# Convert MAF back to VCF
 mafsmith maf2vcf -i input.maf -o output.vcf
-```
 
-### maf2maf — Reannotate an existing MAF
-
-Re-annotates by round-tripping through fastVEP (MAF → VCF → fastVEP → MAF):
-
-```bash
+# Reannotate an existing MAF (round-trips through fastVEP)
 mafsmith maf2maf -i input.maf -o reannotated.maf
-```
 
-### vcf2vcf — Normalize a VCF
-
-```bash
+# Normalize a VCF
 mafsmith vcf2vcf -i input.vcf -o normalized.vcf
 ```
 
@@ -119,7 +120,7 @@ mafsmith targets field-for-field agreement with `vcf2maf.pl --inhibit-vep` (same
 
 | Caller | VCF type | Synapse example |
 |--------|----------|----------------|
-| DRAGEN RefCall | Single-sample, GT=`0/0`/`./.' | syn31624545 |
+| DRAGEN RefCall | Single-sample, GT=`0/0`/`./.'` | syn31624545 |
 | MuTect2 | Single-sample GRCh38 | syn64156972 |
 | FreeBayes | Single-sample | syn31624535 |
 | Strelka2 | Paired tumor/normal | syn31624939 |
