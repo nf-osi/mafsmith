@@ -12,14 +12,20 @@ mafsmith is a rust-based adaptation of the design, field conventions, and edge-c
 
 ## Performance
 
-Benchmarked on a 6,292-variant SV VCF (post-annotation, conversion step only):
+Benchmarked on 7 GIAB NIST v4.2.1 GRCh38 samples (HG001–HG007, ~3.9–4.0M variants each),
+conversion step only (`--skip-annotation` / `--inhibit-vep`), on an AWS c6a.4xlarge
+(AMD EPYC 7R13, 16 vCPU, 30 GiB RAM):
 
 | Tool | Mean time | Variants/s |
 |------|-----------|-----------|
-| `mafsmith --skip-annotation` | ~0.06 s | ~104,000 |
-| `vcf2maf.pl --inhibit-vep` | ~13.9 s | ~132 |
+| `mafsmith --skip-annotation` | 7.050 ± 0.371 s | ~559,000 |
+| `vcf2maf.pl --inhibit-vep` | 559.073 ± 17.016 s | ~7,000 |
 
-**~229× faster** for conversion. Full pipeline speedup including annotation: ~4.8×.
+**79.4× faster** (range 74.3–84.1× across 7 samples) for the conversion step.
+Full end-to-end pipeline speedup (including fastVEP annotation) to be reported separately.
+
+See [`results/conversion_benchmark_giab_grch38.md`](results/conversion_benchmark_giab_grch38.md)
+for full per-sample data, cost savings, and carbon estimates.
 
 ## Installation
 
