@@ -81,30 +81,45 @@ We validated mafsmith against vcf2maf.pl across six caller types, comparing all 
 
 ### Performance
 
-We benchmarked mafsmith against vcf2maf.pl on the conversion step in isolation, passing the same raw VCF to each tool (`mafsmith --skip-annotation` and `vcf2maf.pl --inhibit-vep`) without any prior annotation. Benchmarks were run on an AWS c6a.4xlarge instance (AMD EPYC 7R13, 16 vCPU, 30 GiB RAM) using all seven GIAB NIST v4.2.1 GRCh38 benchmark VCFs (HG001–HG007; one run per sample; 3.84–4.05 million variants per file; 27.5 million variants total). mafsmith used all 16 CPU cores via Rayon; vcf2maf.pl is single-threaded.
+We benchmarked mafsmith against vcf2maf.pl on the conversion step in isolation, passing the same raw VCF to each tool (`mafsmith --skip-annotation` and `vcf2maf.pl --inhibit-vep`) without any prior annotation. Benchmarks were run on an AWS c6a.4xlarge instance (AMD EPYC 7R13, 16 vCPU, 30 GiB RAM) using all seven GIAB NIST v4.2.1 GRCh38 benchmark VCFs (HG001–HG007; 3.84–4.05 million variants per file; 27.5 million variants total). To distinguish algorithmic speedup from parallelism, mafsmith was timed at both 1 core (`RAYON_NUM_THREADS=1`, 3 runs per sample) and 16 cores (default Rayon, 1 run per sample); vcf2maf.pl is single-threaded.
 
 **Table 2. Conversion-only benchmark: mafsmith vs vcf2maf.pl on GIAB NIST v4.2.1 GRCh38.**
 
-| Sample | Variants | mafsmith (s) | vcf2maf.pl (s) | Speedup |
-|--------|----------|-------------|----------------|---------|
-| HG001 (NA12878) | 3,893,341 | 7.398 | 549.988 | 74.3× |
-| HG002 (NA24385) | 4,048,342 | 7.399 | 579.662 | 78.3× |
-| HG003 (NA24149) | 4,000,097 | 7.194 | 573.716 | 79.7× |
-| HG004 (NA24143) | 4,031,346 | 7.054 | 573.687 | 81.3× |
-| HG005 (NA24631) | 3,856,856 | 7.210 | 558.302 | 77.4× |
-| HG006 (NA24694) | 3,839,315 | 6.669 | 537.916 | 80.7× |
-| HG007 (NA24695) | 3,859,704 | 6.424 | 540.243 | 84.1× |
-| **Mean ± SD** | | **7.050 ± 0.371 s** | **559.073 ± 17.016 s** | **79.4× ± 3.1×** |
+| Sample | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl (s) | Speedup (1-core) | Speedup (16-core) |
+|--------|----------|---------------------|----------------------|----------------|------------------|-------------------|
+| HG001 (NA12878) | 3,893,341 | 11.579 | 7.398 | 549.988 | 47.5× | 74.3× |
+| HG002 (NA24385) | 4,048,342 | 12.314 | 7.399 | 579.662 | 47.1× | 78.3× |
+| HG003 (NA24149) | 4,000,097 | 12.084 | 7.194 | 573.716 | 47.5× | 79.7× |
+| HG004 (NA24143) | 4,031,346 | 11.994 | 7.054 | 573.687 | 47.8× | 81.3× |
+| HG005 (NA24631) | 3,856,856 | 11.986 | 7.210 | 558.302 | 46.6× | 77.4× |
+| HG006 (NA24694) | 3,839,315 | 11.071 | 6.669 | 537.916 | 48.6× | 80.7× |
+| HG007 (NA24695) | 3,859,704 | 11.256 | 6.424 | 540.243 | 48.0× | 84.1× |
+| **Mean ± SD** | | **11.755 ± 0.462 s** | **7.050 ± 0.371 s** | **559.073 ± 17.016 s** | **47.6× ± 0.6×** | **79.4× ± 3.1×** |
 
-mafsmith achieved a mean throughput of 558,914 variants/s compared to 7,036 variants/s for vcf2maf.pl, a **79.4-fold speedup** (range 74.3–84.1×). The speedup was highly consistent across all seven samples (coefficient of variation 3.9%), confirming that the result is not specific to a particular sample or file size.
+Even on a single core, mafsmith achieved a mean throughput of 334,802 variants/s — a **47.6-fold speedup** over vcf2maf.pl (range 46.6–48.6×), confirming that the performance advantage is primarily algorithmic rather than a product of parallelism. With all 16 cores, throughput increased to 558,914 variants/s (**79.4-fold speedup**, range 74.3–84.1×), a 1.67× parallel scaling factor. Both speedups were highly consistent across samples (CV 1.3% and 3.9%, respectively).
 
 The practical impact of this speedup scales directly with cohort size. On the same instance type (c6a.4xlarge, $0.612/hr on-demand), the reduction in instance time translates to a cost saving of approximately $0.094 per sample and a reduction of 2.3 g CO₂e per sample (location-based, EPA eGRID 2022 Virginia grid mix; see `results/conversion_benchmark_giab_grch38.md` for full methodology). For a cohort of 10,000 samples this represents approximately $938 in compute cost and 23 kg CO₂e avoided. Full end-to-end pipeline speedup (mafsmith + fastVEP vs. vcf2maf.pl + VEP) will be reported separately.
+
+To confirm that speedups generalise to paired tumor/normal somatic VCFs, we benchmarked mafsmith on five additional datasets: MuTect2 and Strelka2 VCFs from the GIAB HG008 somatic benchmark (NYGC pipeline, GRCh38; HG008-T / HG008-N), and MuTect2 and Strelka VCFs from the SEQC2 WGS somatic dataset (HCC1395 / HCC1395BL). All five VCFs carried paired tumor and normal sample columns.
+
+**Table 3. Somatic tumor/normal benchmark: mafsmith vs vcf2maf.pl.**
+
+| Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl (s) | Speedup (1-core) | Speedup (16-core) |
+|---------|--------|----------|---------------------|----------------------|----------------|------------------|-------------------|
+| GIAB HG008 | MuTect2 | 277,645 | 1.294 | 0.779 | 42.397 | 32.8× | 54.4× |
+| GIAB HG008 | Strelka2 SNV | 1,562,847 | 5.273 | 2.960 | 245.899 | 46.6× | 83.1× |
+| GIAB HG008 | Strelka2 INDEL | 293,719 | 1.239 | 0.684 | 44.676 | 36.1× | 65.3× |
+| SEQC2 HCC1395 | MuTect2 | 271,945 | 1.178 | 0.631 | 38.759 | 32.9× | 61.4× |
+| SEQC2 HCC1395 | Strelka | 2,191,720 | 7.301 | 4.147 | 345.556 | 47.3× | 83.3× |
+| **Mean** | | | | | | **39.1×** | **69.5×** |
+
+mafsmith achieved a mean single-core speedup of **39.1×** (range 32.8–47.3×) and a 16-core speedup of **69.5×** (range 54.4–83.3×) across paired tumor/normal VCFs. The lower bound of the range reflects MuTect2 VCFs, which carry larger per-variant INFO fields (TLOD, NLOD, per-allele annotations) that increase per-line parsing cost for both tools. Note also that vcf2maf.pl does not accept gzip-compressed input and requires decompression before processing; mafsmith reads gzip natively, a further practical advantage not captured in these timings.
 
 ---
 
 ## Discussion
 
-The primary motivation for mafsmith is throughput: converting thousands of VCFs in large cancer genomics cohorts places substantial demands on compute infrastructure when using vcf2maf.pl, and the per-sample annotation step is a major bottleneck. By combining fastVEP's compiled annotation engine with mafsmith's parallel Rust conversion logic, the full pipeline achieves substantially faster conversion while maintaining field-for-field agreement with the reference implementation.
+The primary motivation for mafsmith is throughput: converting thousands of VCFs in large cancer genomics cohorts places substantial demands on compute infrastructure when using vcf2maf.pl, and the per-sample annotation step is a major bottleneck. By combining fastVEP's compiled annotation engine with mafsmith's Rust conversion logic, the full pipeline achieves substantially faster conversion while maintaining field-for-field agreement with the reference implementation. The single-core benchmark (47.6× speedup) confirms that the performance advantage is primarily algorithmic — arising from compiled native code, efficient I/O, and zero-copy parsing — with Rayon parallelism providing an additional 1.67× on top on a 16-core instance.
 
 Achieving full concordance with vcf2maf.pl required careful reverse-engineering of a number of non-obvious behaviours accumulated over years of production use. Key examples include: the treatment of absent normal samples vs. no-call normal GTs in homozygous-alt inference; the VAF-based Allele1 override and its interaction with single-sample vs. paired VCF configurations; the handling of truncated AD arrays from GATK multi-allelic calling; consequence severity ranking for multi-consequence VEP annotations; and the representation of structural variant secondary breakpoint rows.
 
@@ -116,13 +131,20 @@ mafsmith currently uses a prefix/suffix-stripping approach for allele normalisat
 
 ## Conclusion
 
-mafsmith is a fast, self-contained reimplementation of the vcf2maf.pl conversion pipeline in Rust. It produces field-for-field identical MAF output across six distinct caller types while achieving **79.4-fold** faster conversion (range 74.3–84.1× across seven GIAB reference samples totalling 27.5 million variants), making large-cohort VCF-to-MAF conversion practical on standard compute infrastructure. mafsmith is open source (Apache 2.0) and available at https://github.com/nf-osi/mafsmith.
+mafsmith is a fast, self-contained reimplementation of the vcf2maf.pl conversion pipeline in Rust. It produces field-for-field identical MAF output across six distinct caller types while achieving **47.6-fold** faster conversion on a single core (range 46.6–48.6×) and **79.4-fold** faster on 16 cores (range 74.3–84.1×) across seven GIAB reference samples totalling 27.5 million variants, making large-cohort VCF-to-MAF conversion practical on standard compute infrastructure. mafsmith is open source (Apache 2.0) and available at https://github.com/nf-osi/mafsmith.
 
 ---
 
 ## Data availability
 
 Validation VCF files are available from the NF-OSI Synapse project (syn16858331) at https://synapse.org. mafsmith source code and release binaries are available at https://github.com/nf-osi/mafsmith.
+
+Somatic benchmark VCF datasets used in this work:
+
+- **GIAB HG008 somatic (NYGC pipeline, GRCh38):** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/
+- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, hg38):** Paired tumor/normal MuTect2 and Strelka VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/
+- **COLO829 somatic SV truth set (hg38):** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Zenodo: https://zenodo.org/records/7515830
+- **GIAB germline benchmarks (HG001–HG007, GRCh38):** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/
 
 ---
 

@@ -207,6 +207,53 @@ fn vcf2maf_key_columns_match_expected() {
     }
 }
 
+/// Regression: GT=0/1 het call with high VAF (≥0.7) must keep Tumor_Seq_Allele1=REF.
+///
+/// vcf2maf.pl respects an explicit het GT and does not override Allele1 to ALT even
+/// when VAF is high (e.g. AD=2,18 → VAF=0.9). mafsmith must match this behaviour.
+/// Without the fix, the VAF override would fire and produce Allele1='G' instead of 'A'.
+#[test]
+#[ignore = "requires compiled mafsmith binary; run `cargo build` first"]
+fn het_high_vaf_allele1_stays_ref() {
+    let bin = mafsmith_bin();
+    assert!(bin.exists(), "mafsmith binary not found; run `cargo build`");
+
+    let input_vcf = fixtures_dir().join("integration_annotated.vcf");
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+
+    let status = Command::new(&bin)
+        .args([
+            "vcf2maf",
+            "--input-vcf", input_vcf.to_str().unwrap(),
+            "--output-maf", tmp.path().to_str().unwrap(),
+            "--vcf-tumor-id", "test_tumor",
+            "--tumor-id",     "test_tumor",
+            "--vcf-normal-id", "test_normal",
+            "--normal-id",     "test_normal",
+            "--genome", "grch38",
+            "--skip-annotation",
+        ])
+        .status()
+        .expect("Failed to run mafsmith");
+    assert!(status.success(), "mafsmith vcf2maf exited with error");
+
+    let rows = parse_tsv(tmp.path());
+    let row = rows.iter().find(|r| {
+        r.get("Start_Position").map(|s| s == "46300000").unwrap_or(false)
+    }).expect("Regression fixture row 21:46300000 not found in MAF output");
+
+    assert_eq!(
+        row.get("Tumor_Seq_Allele1").map(|s| s.as_str()).unwrap_or(""),
+        "A",
+        "GT=0/1 het with VAF=0.9: Tumor_Seq_Allele1 must stay REF ('A'), not be overridden to ALT ('G')"
+    );
+    assert_eq!(
+        row.get("Tumor_Seq_Allele2").map(|s| s.as_str()).unwrap_or(""),
+        "G",
+        "Tumor_Seq_Allele2 must be ALT ('G')"
+    );
+}
+
 /// Full end-to-end: run vcf2maf on a real VCF with fastVEP annotation and compare
 /// key columns against the vcf2maf reference MAF.
 ///

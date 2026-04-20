@@ -2,27 +2,28 @@
 
 **Date:** 2026-04-20  
 **Instance:** AWS c6a.4xlarge (AMD EPYC 7R13, 16 vCPU, 30 GiB RAM, us-east-1)  
-**mafsmith:** v0.1.0 (`--skip-annotation`, Rayon parallel, all 16 cores)  
+**mafsmith:** v0.1.0 (`--skip-annotation`); timed at both 1 core (`RAYON_NUM_THREADS=1`) and 16 cores (default Rayon)  
 **vcf2maf.pl:** bioconda ensembl-vep/vcf2maf (`--inhibit-vep`, single-threaded)  
 **Input:** GIAB NIST v4.2.1 benchmark VCFs, GRCh38 chr1–22, HG001–HG007  
 **Source:** https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/  
-**Method:** Raw VCF passed directly to each tool (no pre-annotation); one run per file.
+**Method:** Raw VCF passed directly to each tool (no pre-annotation); 3 runs per file (mafsmith), 1 run per file (vcf2maf.pl).
 
 ## Results
 
-| Sample | Variants | mafsmith (s) | vcf2maf.pl (s) | Speedup |
-|--------|----------|-------------|----------------|---------|
-| HG001 (NA12878) | 3,893,341 | 7.398 | 549.988 | 74.3× |
-| HG002 (NA24385) | 4,048,342 | 7.399 | 579.662 | 78.3× |
-| HG003 (NA24149) | 4,000,097 | 7.194 | 573.716 | 79.7× |
-| HG004 (NA24143) | 4,031,346 | 7.054 | 573.687 | 81.3× |
-| HG005 (NA24631) | 3,856,856 | 7.210 | 558.302 | 77.4× |
-| HG006 (NA24694) | 3,839,315 | 6.669 | 537.916 | 80.7× |
-| HG007 (NA24695) | 3,859,704 | 6.424 | 540.243 | 84.1× |
-| **Mean ± SD** | **3,932,714 ± 93,001** | **7.050 ± 0.371s** | **559.073 ± 17.016s** | **79.4× ± 3.1×** |
+| Sample | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl (s) | Speedup (1-core) | Speedup (16-core) |
+|--------|----------|---------------------|----------------------|----------------|------------------|-------------------|
+| HG001 (NA12878) | 3,893,341 | 11.579 | 7.398 | 549.988 | 47.5× | 74.3× |
+| HG002 (NA24385) | 4,048,342 | 12.314 | 7.399 | 579.662 | 47.1× | 78.3× |
+| HG003 (NA24149) | 4,000,097 | 12.084 | 7.194 | 573.716 | 47.5× | 79.7× |
+| HG004 (NA24143) | 4,031,346 | 11.994 | 7.054 | 573.687 | 47.8× | 81.3× |
+| HG005 (NA24631) | 3,856,856 | 11.986 | 7.210 | 558.302 | 46.6× | 77.4× |
+| HG006 (NA24694) | 3,839,315 | 11.071 | 6.669 | 537.916 | 48.6× | 80.7× |
+| HG007 (NA24695) | 3,859,704 | 11.256 | 6.424 | 540.243 | 48.0× | 84.1× |
+| **Mean ± SD** | **3,932,714 ± 93,001** | **11.755 ± 0.462s** | **7.050 ± 0.371s** | **559.073 ± 17.016s** | **47.6× ± 0.6×** | **79.4× ± 3.1×** |
 
 **Total variants processed:** 27,529,001  
-**Throughput — mafsmith:** 558,914 variants/s (mean)  
+**Throughput — mafsmith (1-core):** 334,802 variants/s (mean)  
+**Throughput — mafsmith (16-core):** 558,914 variants/s (mean)  
 **Throughput — vcf2maf.pl:** 7,036 variants/s (mean)
 
 ## Cost and carbon savings

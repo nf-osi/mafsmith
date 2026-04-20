@@ -45,6 +45,7 @@ target/release/mafsmith vcf2maf \
 | 21:46000000 C>T | IGR | SNP | intergenic_variant |
 | 21:46100000 G>A | RNA | SNP | non_coding_transcript_exon_variant (lncRNA biotype) |
 | 21:46200000 AC>GT | Missense_Mutation | DNP | Dinucleotide polymorphism Variant_Type |
+| 21:46300000 A>G GT=0/1 AD=2,18 | Missense_Mutation | SNP | Het call with VAF=0.9 ≥ 0.7: Tumor_Seq_Allele1 must stay REF. Bug: VAF override fired on explicit GT=0/1; fix: suppress override when GT has both ref (0) and alt (>0) indices |
 
 ### Known remaining differences vs vcf2maf.pl
 
@@ -78,6 +79,16 @@ Previously benchmarked on a 305K-variant annotated VCF (578 MB): mafsmith ~6.2s 
 
 ## Benchmarking scripts
 
-- `scripts/benchmark.py` — Python timing harness; recommended
+- `scripts/benchmark_all.py` — Full benchmark suite (conversion-only and annotated modes)
+  - `--datasets germline,hg008,seqc2 --iterations 3` — conversion-only, 3 runs each
+  - `--datasets hg008,seqc2 --annotated --iterations 1` — annotated (fastVEP/VEP), 1 run each
+  - Requires `~/.mafsmith/hg38/genes.gff3` (chr-prefixed) for annotated mode; create with:
+    `zcat ~/.mafsmith/GRCh38/genes.gff3.gz | sed 's/^##sequence-region   /##sequence-region   chr/; /^#/!s/^/chr/' > ~/.mafsmith/hg38/genes.gff3`
+  - Requires VEP 115 GRCh38 indexed cache at `~/.vep/` for vcf2maf.pl annotated mode:
+    1. Download: `curl -# https://ftp.ensembl.org/pub/release-115/variation/indexed_vep_cache/homo_sapiens_vep_115_GRCh38.tar.gz -o ~/.vep/homo_sapiens_vep_115_GRCh38.tar.gz`
+    2. Extract: `tar -xzf ~/.vep/homo_sapiens_vep_115_GRCh38.tar.gz -C ~/.vep/`
+  - Requires Perl module fix (if not done): `conda install -n vcf2maf-env -c conda-forge perl-compress-raw-zlib`
+- `scripts/compare_annotations.py` — Compare fastVEP vs VEP CSQ output on the same VCF
+- `scripts/benchmark.py` — Older single-file Python timing harness
 - `scripts/benchmark.sh` — bash alternative (less reliable on macOS)
 - `benches/vcf2maf.rs` — Criterion microbenchmarks (`cargo bench`)

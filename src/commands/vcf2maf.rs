@@ -493,15 +493,24 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             })
             .unwrap_or_else(|| norm.ref_allele.clone());
 
-        // vcf2maf.pl VAF override: even when GT=0/1 (het), if alt VAF >= min_hom_vaf the
-        // caller under-called the GT. Override Tumor_Seq_Allele1 to ALT in that case,
-        // matching vcf2maf.pl's "if tvaf >= min_hom_vaf { allele1 = var }" logic.
+        // vcf2maf.pl VAF override: when GT is absent, no-call (./.), or hom-ref (0/0), and
+        // alt VAF >= min_hom_vaf, the caller under-called; override Tumor_Seq_Allele1 to ALT.
+        // vcf2maf.pl respects an explicit het GT (0/1) and does NOT override it even at
+        // high VAF — mafsmith matches this behaviour by skipping the override when the tumor
+        // GT contains both a ref allele (index 0) and at least one alt allele (index > 0).
         // Only fire when AD has the full complement of allele values (strict count, matching
         // vcf2maf.pl: it skips the override when AD is shorter than expected — e.g. GATK
         // multi-allelic sites where AD is trimmed to only the called allele).
         // Suppress for single-sample VCFs (no normal column): vcf2maf.pl skips the override
         // when there is no matched normal, matching the behavior for absent normal samples.
-        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_col.is_some() {
+        let gt_is_explicit_het = tumor_vals.as_deref().and_then(|vals| {
+            let gi = rec.format_keys.iter().position(|k| k == "GT")?;
+            let gt = vals.get(gi)?;
+            let idxs: Vec<usize> = gt.split(|c: char| c == '/' || c == '|')
+                .filter_map(|s| s.parse().ok()).collect();
+            Some(idxs.iter().any(|&i| i == 0) && idxs.iter().any(|&i| i > 0))
+        }).unwrap_or(false);
+        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_col.is_some() && !gt_is_explicit_het {
             if let Some(vals) = tumor_vals.as_deref() {
                 let ad_full = rec.format_keys.iter().position(|k| k == "AD")
                     .and_then(|i| vals.get(i))
@@ -828,21 +837,29 @@ fn run_fastvep(
         gff3
     };
 
-    // Strip chr prefix from VCF if FASTA uses bare chromosome names.
-    // fastVEP can't match "chr1" in VCF against "1" in GFF3/FASTA.
+    // fastVEP cannot read gzip-compressed VCF, and cannot match "chr1" against "1".
+    // Pre-process the input VCF into a plain temp file when either condition applies.
     let fasta_has_chr = fasta_chrom_has_chr(ref_fasta);
     let vcf_has_chr = vcf_chrom_has_chr(input_vcf);
+    let is_gz = input_vcf.extension().and_then(|e| e.to_str()) == Some("gz");
+    let strip_chr = vcf_has_chr && !fasta_has_chr;
     let _stripped_vcf: Option<NamedTempFile>;
-    let input_vcf_path: &Path = if vcf_has_chr && !fasta_has_chr {
+    let input_vcf_path: &Path = if strip_chr || is_gz {
         let mut tmp_vcf = NamedTempFile::with_suffix(".vcf")
-            .context("Cannot create temp file for chr-stripped VCF")?;
+            .context("Cannot create temp file for VCF preprocessing")?;
         let src = fs::File::open(input_vcf)?;
-        let is_gz = input_vcf.extension().and_then(|e| e.to_str()) == Some("gz");
         let writer = BufWriter::new(tmp_vcf.as_file_mut());
-        if is_gz {
-            strip_chr_prefix(BufReader::new(MultiGzDecoder::new(src)), writer)?;
+        if strip_chr {
+            if is_gz {
+                strip_chr_prefix(BufReader::new(MultiGzDecoder::new(src)), writer)?;
+            } else {
+                strip_chr_prefix(BufReader::new(src), writer)?;
+            }
         } else {
-            strip_chr_prefix(BufReader::new(src), writer)?;
+            // Decompress only — fastVEP requires plain VCF.
+            let mut dec = BufReader::new(MultiGzDecoder::new(src));
+            let mut w = writer;
+            std::io::copy(&mut dec, &mut w).context("Failed to decompress VCF for fastVEP")?;
         }
         _stripped_vcf = Some(tmp_vcf);
         _stripped_vcf.as_ref().unwrap().path()
