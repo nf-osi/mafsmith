@@ -244,7 +244,7 @@ def compare_mafs(ms_path, vc_path):
     }
 
 
-def process_one(syn_id, vcf_path, work_dir, force_vcf2maf=False):
+def process_one(syn_id, vcf_path, work_dir, force_vcf2maf=False, max_variants=None):
     samples, has_chr, is_grch38 = read_vcf_header(vcf_path)
     if is_grch38 is False:
         return {"status": "skipped", "reason": "Not GRCh38"}
@@ -258,18 +258,23 @@ def process_one(syn_id, vcf_path, work_dir, force_vcf2maf=False):
 
     # fastVEP requires plain-text VCF; decompress gzip/bgzf first.
     # Also strip chr prefix if needed (GFF3/FASTA use bare chr names).
+    # Optionally subsample to max_variants variant lines.
     plain_vcf = os.path.join(work_dir, "input_plain.vcf")
-    if str(vcf_path).endswith(".gz"):
-        with gzip.open(vcf_path, "rt") as fin, open(plain_vcf, "w") as fout:
-            for line in fin:
-                if has_chr and not line.startswith("#"):
-                    fout.write(line[3:] if line.startswith("chr") else line)
-                else:
-                    fout.write(line)
-    elif has_chr:
-        strip_chr(vcf_path, plain_vcf)
-    else:
-        plain_vcf = str(vcf_path)
+    opener = gzip.open if str(vcf_path).endswith(".gz") else open
+    with opener(vcf_path, "rt") as fin, open(plain_vcf, "w") as fout:
+        variant_count = 0
+        for line in fin:
+            if line.startswith("#"):
+                fout.write(line)
+            else:
+                if max_variants is not None and variant_count >= max_variants:
+                    break
+                if has_chr and line.startswith("chr"):
+                    line = line[3:]
+                fout.write(line)
+                variant_count += 1
+    if max_variants is not None:
+        print(f"    Subsampled to first {variant_count:,} variants", flush=True)
     vcf_for_fv = plain_vcf
 
     # Annotate with fastVEP
@@ -304,7 +309,7 @@ def process_one(syn_id, vcf_path, work_dir, force_vcf2maf=False):
               "-i", fv_out, "-o", ms_maf,
               "--vcf-tumor-id", tumor_id,
               "--tumor-id",     tumor_id,
-              "--skip-annotation"]
+              "--skip-annotation", "--strict"]
     if normal_id:
         cmd_ms += ["--vcf-normal-id", normal_id, "--normal-id", normal_id]
     run(cmd_ms)
@@ -323,6 +328,8 @@ def main():
                         help="Synapse IDs to validate (default: 4 previously-failing IDs)")
     parser.add_argument("--force-vcf2maf", action="store_true",
                         help="Re-run vcf2maf.pl even if a saved reference already exists")
+    parser.add_argument("--max-variants", type=int, default=None,
+                        help="Subsample to the first N variant lines (useful for large VCFs)")
     args = parser.parse_args()
 
     syn = synapseclient.Synapse()
@@ -335,7 +342,8 @@ def main():
         try:
             f = syn.get(syn_id, downloadFile=True, downloadLocation=work_dir)
             print(f"    {Path(f.path).name}", flush=True)
-            r = process_one(syn_id, f.path, work_dir, force_vcf2maf=args.force_vcf2maf)
+            r = process_one(syn_id, f.path, work_dir, force_vcf2maf=args.force_vcf2maf,
+                            max_variants=args.max_variants)
             results.append({"syn_id": syn_id, **r})
 
             if r["status"] == "ok":
