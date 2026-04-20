@@ -3,6 +3,9 @@ use clap::Parser;
 use mafsmith::cli::{Cli, Command};
 use mafsmith::commands;
 
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()

@@ -86,7 +86,7 @@ pub struct Vcf2mafArgs {
     pub gff3: Option<PathBuf>,
 
     /// Sequencing center for MAF header
-    #[arg(long, default_value = "")]
+    #[arg(long, default_value = ".")]
     pub maf_center: String,
 
     /// Minimum alt allele frequency to include somatic variants
@@ -100,6 +100,14 @@ pub struct Vcf2mafArgs {
     /// Skip fastVEP annotation (input VCF must already contain CSQ annotations)
     #[arg(long, default_value_t = false)]
     pub skip_annotation: bool,
+
+    /// Strict mode: match vcf2maf.pl behavior exactly for truncated AD fields.
+    /// When AD has fewer values than the number of alleles (REF + all ALTs),
+    /// output '.' for depth fields (t_ref_count, t_alt_count, t_depth, n_ref_count,
+    /// n_alt_count, n_depth) and suppress depth-based allele calling, matching
+    /// vcf2maf.pl's behavior for GATK multi-allelic sites with trimmed AD arrays.
+    #[arg(long, default_value_t = false)]
+    pub strict: bool,
 }
 
 #[derive(Args, Debug)]

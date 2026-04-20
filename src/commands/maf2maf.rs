@@ -37,6 +37,7 @@ pub async fn run(args: Maf2mafArgs) -> Result<()> {
         min_hom_vaf: 0.0,
         retain_ann: vec![],
         skip_annotation: false,
+        strict: false,
     })
     .await?;
 

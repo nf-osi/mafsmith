@@ -26,8 +26,11 @@ impl AlleleDepth {
 ///
 /// `alt_vcf_idx`: 1-based VCF allele index of the selected ALT (1 = first ALT, 2 = second, …).
 /// This is used as the AD array index for the alt count in multi-allelic records.
-pub fn extract_depth(
-    format_keys: &[&str],
+///
+/// `F` is generic so callers can pass `&[String]` (from VcfRecord) without first collecting
+/// to `Vec<&str>`, avoiding a per-record allocation.
+pub fn extract_depth<F: AsRef<str>>(
+    format_keys: &[F],
     sample_values: &[&str],
     ref_allele: &str,
     alt_allele: &str,
@@ -36,7 +39,7 @@ pub fn extract_depth(
     let get = |key: &str| -> Option<&str> {
         format_keys
             .iter()
-            .position(|k| *k == key)
+            .position(|k| k.as_ref() == key)
             .and_then(|i| sample_values.get(i).copied())
             .filter(|v| !v.is_empty() && *v != ".")
     };
@@ -102,13 +105,22 @@ pub fn extract_depth(
     }
 
     // 4. Strelka indels: TAR (ref), TIR (alt)
+    // vcf2maf.pl uses max(DP, TAR[0]+TIR[0]) for total depth, because TAR/TIR count
+    // reads at a specific indel tier that can exceed the DP-field count.
     if get("TAR").is_some() || get("TIR").is_some() {
         let ref_count = get("TAR").and_then(first_num);
         let alt_count = get("TIR").and_then(first_num);
+        let sum_tar_tir = ref_count.zip(alt_count).map(|(r, a)| r + a);
+        let total = match (dp, sum_tar_tir) {
+            (Some(d), Some(s)) => Some(d.max(s)),
+            (Some(d), None)    => Some(d),
+            (None, Some(s))    => Some(s),
+            (None, None)       => None,
+        };
         return AlleleDepth {
             ref_count,
             alt_count,
-            total_depth: dp,
+            total_depth: total,
         };
     }
 

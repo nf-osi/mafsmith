@@ -130,14 +130,14 @@ fn ensembl_urls(genome: &Genome, release: u32) -> (String, String) {
             ),
         ),
         Genome::Grch37 => (
-            format!(
-                "https://ftp.ensembl.org/pub/grch37/release-{release}/gff3/homo_sapiens/\
-                 Homo_sapiens.GRCh37.87.chr.gff3.gz"
-            ),
-            format!(
-                "https://ftp.ensembl.org/pub/grch37/release-{release}/fasta/homo_sapiens/dna/\
-                 Homo_sapiens.GRCh37.87.dna.primary_assembly.fa.gz"
-            ),
+            // GRCh37 is archived on Ensembl; use the latest grch37 release path.
+            // GFF3 filename keeps the 87 suffix (Ensembl annotation version); FASTA does not.
+            "https://ftp.ensembl.org/pub/grch37/release-115/gff3/homo_sapiens/\
+             Homo_sapiens.GRCh37.87.chr.gff3.gz"
+                .to_owned(),
+            "https://ftp.ensembl.org/pub/grch37/release-115/fasta/homo_sapiens/dna/\
+             Homo_sapiens.GRCh37.dna.primary_assembly.fa.gz"
+                .to_owned(),
         ),
         Genome::Grcm39 => (
             format!(

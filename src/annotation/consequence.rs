@@ -1,7 +1,10 @@
 /// Maps Sequence Ontology consequence terms to MAF Variant_Classification.
 /// Priority order matches vcf2maf.pl for multi-consequence resolution.
-pub fn so_to_variant_classification(
-    consequences: &[&str],
+///
+/// Generic over the slice element type so callers can pass `&[String]` or `&[&str]`
+/// without an intermediate Vec allocation.
+pub fn so_to_variant_classification<S: AsRef<str>>(
+    consequences: &[S],
     ref_allele: &str,
     alt_allele: &str,
 ) -> &'static str {
@@ -14,8 +17,8 @@ pub fn so_to_variant_classification(
     // fastVEP (and VEP) can emit '&'-joined multi-consequence strings where the order
     // does not reflect severity (e.g. "feature_truncation&splice_acceptor_variant").
     // vcf2maf.pl sorts by GetEffectPriority before classifying, so we must do the same.
-    let mut sorted = consequences.to_vec();
-    sorted.sort_by_key(|&c| consequence_severity(&[c]));
+    let mut sorted: Vec<&str> = consequences.iter().map(|s| s.as_ref()).collect();
+    sorted.sort_by_key(|&c| consequence_severity::<&str>(&[c]));
     for csq in &sorted {
         let cls = match *csq {
             "splice_acceptor_variant" | "splice_donor_variant"
@@ -104,9 +107,12 @@ pub fn so_to_variant_classification(
 
 /// Consequence priority for transcript selection tiebreaking.
 /// Matches vcf2maf.pl GetEffectPriority (lower number = higher priority).
-pub fn consequence_severity(consequences: &[&str]) -> u8 {
+///
+/// Generic over the slice element type so callers can pass `&[String]` or `&[&str]`
+/// without an intermediate Vec allocation.
+pub fn consequence_severity<S: AsRef<str>>(consequences: &[S]) -> u8 {
     for csq in consequences {
-        let rank: u8 = match *csq {
+        let rank: u8 = match csq.as_ref() {
             "transcript_ablation" | "exon_loss_variant" => 1,
             "splice_donor_variant" | "splice_acceptor_variant" => 2,
             "stop_gained" | "frameshift_variant" | "stop_lost" => 3,
