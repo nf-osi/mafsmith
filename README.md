@@ -12,6 +12,8 @@ mafsmith builds directly on the design, field conventions, and edge-case handlin
 
 ## Performance
 
+mafsmith is substantially faster than vcf2maf.pl for both the conversion step and the full annotation pipeline. Speedup varies by VCF type and size; in practice we observe **30–40× end-to-end** (mafsmith + fastVEP vs. vcf2maf.pl + VEP) across typical WES and WGS cohort files. The conversion step alone (pre-annotated VCF, `--skip-annotation` / `--inhibit-vep`) shows larger gains on small or SV-heavy files.
+
 Benchmarked on a 6,292-variant SV VCF (post-annotation, conversion step only):
 
 | Tool | Mean time | Variants/s |
@@ -19,7 +21,7 @@ Benchmarked on a 6,292-variant SV VCF (post-annotation, conversion step only):
 | `mafsmith --skip-annotation` | ~0.06 s | ~104,000 |
 | `vcf2maf.pl --inhibit-vep` | ~13.9 s | ~132 |
 
-**~229× faster** for conversion. Full pipeline speedup including annotation: ~4.8×.
+Comprehensive benchmarks on larger WES/WGS cohorts are in progress.
 
 ## Installation
 
