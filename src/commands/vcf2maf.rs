@@ -440,11 +440,11 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 };
                 let needs_depth_fallback = idxs.is_empty() || idxs.iter().all(|&i| i == 0) || all_in_normal_gt;
                 if needs_depth_fallback {
-                    // vcf2maf.pl treats an absent normal as GT="./." and suppresses all depth-based
-                    // VAF overrides. For single-sample VCFs (no normal column), keep TSA1=ref from
-                    // GT rather than inferring hom-alt from depth — matching vcf2maf.pl behavior.
-                    // Also suppress in strict mode when AD is truncated.
-                    let hom_alt = if tumor_ad_truncated || normal_col.is_none() {
+                    // When GT is a no-call (./.) or hom-ref (0/0), vcf2maf.pl infers
+                    // het vs hom-alt from depth: VAF >= min_hom_vaf → TSA1=alt; else REF.
+                    // This fires for all VCFs (single-sample and paired alike).
+                    // Suppress only when AD is truncated in strict mode.
+                    let hom_alt = if tumor_ad_truncated {
                         false
                     } else {
                         (|| -> Option<bool> {
@@ -499,18 +499,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // Only fire when AD has the full complement of allele values (strict count, matching
         // vcf2maf.pl: it skips the override when AD is shorter than expected — e.g. GATK
         // multi-allelic sites where AD is trimmed to only the called allele).
-        // vcf2maf.pl also skips the override when the normal sample GT is a no-call (./.).
-        // vcf2maf.pl treats an absent normal as GT="./." — the override is suppressed.
-        // unwrap_or(false): absent normal → no valid GT → suppress override (matches vcf2maf.pl).
-        let normal_has_valid_gt = normal_vals.as_deref()
-            .and_then(|vals| {
-                let gt_idx = rec.format_keys.iter().position(|k| k == "GT")?;
-                vals.get(gt_idx).map(|gt| {
-                    gt.split(|c| c == '/' || c == '|').any(|s| s != "." && s != "")
-                })
-            })
-            .unwrap_or(false);
-        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_has_valid_gt {
+        // Suppress for single-sample VCFs (no normal column): vcf2maf.pl skips the override
+        // when there is no matched normal, matching the behavior for absent normal samples.
+        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_col.is_some() {
             if let Some(vals) = tumor_vals.as_deref() {
                 let ad_full = rec.format_keys.iter().position(|k| k == "AD")
                     .and_then(|i| vals.get(i))

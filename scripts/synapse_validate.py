@@ -330,6 +330,8 @@ def main():
                         help="Re-run vcf2maf.pl even if a saved reference already exists")
     parser.add_argument("--max-variants", type=int, default=None,
                         help="Subsample to the first N variant lines (useful for large VCFs)")
+    parser.add_argument("--keep-work", action="store_true",
+                        help="Do not delete the work directory after processing (for debugging)")
     args = parser.parse_args()
 
     syn = synapseclient.Synapse()
@@ -365,9 +367,12 @@ def main():
             print(f"    → ERROR: {e}", flush=True)
             results.append({"syn_id": syn_id, "status": "error", "reason": str(e)[:300]})
         finally:
-            shutil.rmtree(work_dir, ignore_errors=True)
-            # Purge entire Synapse cache to reclaim disk space between files.
-            shutil.rmtree(os.path.expanduser("~/.synapseCache"), ignore_errors=True)
+            if args.keep_work:
+                print(f"    Work dir kept: {work_dir}", flush=True)
+            else:
+                shutil.rmtree(work_dir, ignore_errors=True)
+                # Purge entire Synapse cache to reclaim disk space between files.
+                shutil.rmtree(os.path.expanduser("~/.synapseCache"), ignore_errors=True)
 
     print("\n" + "=" * 60)
     ok      = [r for r in results if r.get("status") == "ok"]
