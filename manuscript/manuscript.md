@@ -22,7 +22,7 @@ The standard tool for this conversion is vcf2maf.pl, developed and maintained by
 
 However, vcf2maf.pl has significant performance limitations. Running VEP for each conversion is the primary bottleneck: annotating a typical whole-exome sequencing (WES) VCF of 50,000–300,000 variants can take 10–60 minutes per sample. For large cohorts of hundreds or thousands of samples, this becomes a major computational burden. Additionally, the dependency on a compatible Perl + VEP + reference database stack creates significant installation and reproducibility challenges.
 
-Recent development of fastVEP [CITATION: fastVEP], a compiled reimplementation of VEP's core annotation logic, substantially reduces annotation time. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.pl, which processes variants at approximately 130 variants/second even when annotation is skipped.
+Recent development of fastVEP [Huang, 2026], a compiled reimplementation of VEP's core annotation logic, substantially reduces annotation time. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.pl, which processes variants at approximately 130 variants/second even when annotation is skipped.
 
 Here we describe mafsmith, a Rust implementation of the complete VCF-to-MAF conversion pipeline. mafsmith integrates fastVEP for annotation and reimplements the allele-normalisation and field-mapping logic of vcf2maf.pl from first principles. We validate mafsmith's output against vcf2maf.pl across six distinct variant caller types, demonstrate **[X]-fold** end-to-end speedup and **~229-fold** speedup for the conversion step, and describe the specific edge cases and caller-specific conventions that required careful implementation to achieve agreement.
 
@@ -36,7 +36,7 @@ mafsmith is implemented in Rust and structured as a command-line tool with five 
 
 ### Annotation
 
-When annotation is required, mafsmith invokes fastVEP [CITATION: fastVEP] with HGVS notation enabled. fastVEP produces a standard VCF with `CSQ` INFO fields using the same format as Ensembl VEP, allowing mafsmith to reuse the same downstream parsing logic regardless of whether annotation was performed upstream. For pre-annotated VCFs, annotation can be skipped with `--skip-annotation`.
+When annotation is required, mafsmith invokes fastVEP [Huang, 2026] with HGVS notation enabled. fastVEP produces a standard VCF with `CSQ` INFO fields using the same format as Ensembl VEP, allowing mafsmith to reuse the same downstream parsing logic regardless of whether annotation was performed upstream. For pre-annotated VCFs, annotation can be skipped with `--skip-annotation`.
 
 ### Transcript selection
 
@@ -142,7 +142,7 @@ mafsmith builds on the design, field conventions, and years of accumulated edge-
 
 [CITATION: VEP] McLaren W, Gil L, Hunt SE, Riat HS, Ritchie GR, Thormann A, Flicek P, Cunningham F. The Ensembl Variant Effect Predictor. *Genome Biol.* 2016;17(1):122. https://doi.org/10.1186/s13059-016-0974-4
 
-[CITATION: fastVEP] [fastVEP citation TBD — check for preprint or publication]
+[Huang, 2026] Huang K. fastVEP: A Fast, Comprehensive Variant Effect Predictor Written in Rust. *bioRxiv.* 2026. https://doi.org/10.64898/2026.04.14.718452
 
 [CITATION: GDC] Jensen MA, Ferretti V, Grossman RL, Staudt LM. The NCI Genomic Data Commons as an engine for precision medicine. *Blood.* 2017;130(4):453–459. https://doi.org/10.1182/blood-2017-03-735654
 
