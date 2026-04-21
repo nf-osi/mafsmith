@@ -34,8 +34,18 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 MAFSMITH  = REPO / "target" / "release" / "mafsmith"
-REF_FASTA = Path.home() / ".mafsmith" / "hg38" / "reference.fa"
 VEP_CACHE = Path.home() / ".vep"
+
+REF_FASTA_BY_GENOME = {
+    "grch38": Path.home() / ".mafsmith" / "hg38" / "reference.fa",
+    "grch37": Path.home() / ".mafsmith" / "hg19" / "reference.fa",
+    "grcm39": Path.home() / ".mafsmith" / "grcm39" / "reference.fa",
+}
+NCBI_BUILD_BY_GENOME = {
+    "grch38": "GRCh38",
+    "grch37": "GRCh37",
+    "grcm39": "GRCm39",
+}
 
 # Only these fields are compared. They reflect VCF→MAF conversion logic and
 # should be identical regardless of which transcript/gene model was chosen.
@@ -326,8 +336,12 @@ def main():
                    help="Subsample to first N variant lines (for quick tests)")
     p.add_argument("--output-dir",   type=Path, default=None,
                    help="Where to write MAFs and diff.txt (default: /tmp/vcf_diff_<id>/)")
+    p.add_argument("--genome",        default="grch38",
+                   choices=["grch38", "grch37", "grcm39"],
+                   help="Reference genome assembly [default: grch38]")
     p.add_argument("--mafsmith",     type=Path, default=MAFSMITH)
-    p.add_argument("--ref-fasta",    type=Path, default=REF_FASTA)
+    p.add_argument("--ref-fasta",    type=Path, default=None,
+                   help="Reference FASTA (auto-detected from --genome if omitted)")
     p.add_argument("--vep-cache",    type=Path, default=VEP_CACHE)
     p.add_argument("--vep-forks",    type=int,  default=16,
                    help="VEP forks for both mafsmith and vcf2maf.pl [default: 16]")
@@ -339,12 +353,16 @@ def main():
                    help="Keep temp working directory after finishing")
     args = p.parse_args()
 
+    # Resolve ref_fasta from genome if not given explicitly
+    if args.ref_fasta is None:
+        args.ref_fasta = REF_FASTA_BY_GENOME.get(args.genome)
+
     # Validate tools / paths
-    for attr, label in [("mafsmith", "mafsmith binary"),
-                         ("ref_fasta", "reference FASTA")]:
-        path = getattr(args, attr)
-        if not path.exists():
-            sys.exit(f"ERROR: {label} not found at {path}")
+    if not args.mafsmith.exists():
+        sys.exit(f"ERROR: mafsmith binary not found at {args.mafsmith}")
+    if args.ref_fasta and not args.ref_fasta.exists():
+        print(f"WARNING: ref FASTA not found at {args.ref_fasta} — running without --fasta", flush=True)
+        args.ref_fasta = None
 
     vcf2maf = None if args.no_vcf2maf else find_tool("vcf2maf.pl")
     if not args.no_vcf2maf and not vcf2maf:
@@ -418,6 +436,8 @@ def main():
         else:
             print(f"  {n_variants:,} variants", flush=True)
 
+        ncbi_build = NCBI_BUILD_BY_GENOME.get(args.genome, "GRCh38")
+
         # --- mafsmith + VEP ---
         print(f"\nRunning mafsmith + VEP (--vep-forks {args.vep_forks})...", flush=True)
         ms_cmd = [
@@ -426,12 +446,13 @@ def main():
             "-o", str(ms_maf),
             "--vcf-tumor-id", vcf_tumor_id,
             "--tumor-id",     tumor_id,
-            "--genome", "grch38",
-            "--ref-fasta", str(args.ref_fasta),
+            "--genome", args.genome,
             "--annotator", "vep",
             "--vep-data",  str(args.vep_cache),
             "--vep-forks", str(args.vep_forks),
         ]
+        if args.ref_fasta:
+            ms_cmd += ["--ref-fasta", str(args.ref_fasta)]
         if normal_id:
             ms_cmd += ["--vcf-normal-id", vcf_normal_id, "--normal-id", normal_id]
         if vep:
@@ -455,12 +476,13 @@ def main():
                 "--output-maf",    str(vc_maf),
                 "--tumor-id",      tumor_id,
                 "--vcf-tumor-id",  vcf_tumor_id,
-                "--ref-fasta",     str(args.ref_fasta),
-                "--ncbi-build",    "GRCh38",
+                "--ncbi-build",    ncbi_build,
                 "--cache-version", "115",
                 "--vep-forks",     str(args.vep_forks),
                 "--vep-data",      str(args.vep_cache),
             ]
+            if args.ref_fasta:
+                vc_cmd += ["--ref-fasta", str(args.ref_fasta)]
             if normal_id:
                 vc_cmd += ["--normal-id", normal_id, "--vcf-normal-id", vcf_normal_id]
             if vep:
@@ -480,7 +502,8 @@ def main():
             diff = compare_mafs(ms_rows, vc_rows)
 
             run_desc = (
-                f"mafsmith{'(--strict)' if args.strict else ''}+VEP vs vcf2maf.pl+VEP (--vep-forks {args.vep_forks})"
+                f"mafsmith{'(--strict)' if args.strict else ''}+VEP vs vcf2maf.pl+VEP"
+                f" ({ncbi_build}, --vep-forks {args.vep_forks})"
                 + (f"; max-variants {args.max_variants:,}" if args.max_variants else "")
             )
             write_diff_report(diff, diff_path, input_label,
