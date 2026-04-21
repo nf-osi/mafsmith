@@ -38,19 +38,8 @@ REF_FASTA = Path.home() / ".mafsmith" / "hg38" / "reference.fa"
 GFF3      = Path.home() / ".mafsmith" / "hg38" / "genes.gff3"
 VEP_CACHE = Path.home() / ".vep"
 
-# Fields that vary because fastVEP and VEP 115 may use different Ensembl gene model versions.
-# Differences here are expected and not bugs in mafsmith's conversion logic.
-ANNOTATION_FIELDS = {
-    "Hugo_Symbol",
-    "Transcript_ID",
-    "HGVSc",
-    "HGVSp",
-    "HGVSp_Short",
-    "Exon_Number",
-    "Entrez_Gene_Id",
-}
-
-# Fields that reflect conversion logic only, independent of which transcript was chosen.
+# Only these fields are compared. They reflect VCF→MAF conversion logic and
+# should be identical regardless of which transcript/gene model was chosen.
 CONVERSION_FIELDS = {
     "Variant_Classification",
     "Variant_Type",
@@ -67,26 +56,6 @@ CONVERSION_FIELDS = {
     "n_alt_count",
     "Matched_Norm_Sample_Barcode",
     "Tumor_Sample_Barcode",
-}
-
-# Skip entirely — version-dependent databases or complex multi-value fields.
-SKIP_FIELDS = {
-    "dbSNP_RS", "DOMAINS", "SIFT", "PolyPhen", "all_effects",
-    "gnomADe_AF", "gnomADe_AFR_AF", "gnomADe_AMR_AF", "gnomADe_ASJ_AF",
-    "gnomADe_EAS_AF", "gnomADe_FIN_AF", "gnomADe_NFE_AF", "gnomADe_OTH_AF",
-    "gnomADe_SAS_AF", "AF", "AFR_AF", "AMR_AF", "ASN_AF", "EAS_AF",
-    "EUR_AF", "SAS_AF", "Sequencer", "Tumor_Sample_UUID",
-    "Matched_Norm_Sample_UUID",
-}
-
-HGVS_FIELDS = {"HGVSc", "HGVSp", "HGVSp_Short"}
-
-THREE_TO_ONE = {
-    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C",
-    "Gln": "Q", "Glu": "E", "Gly": "G", "His": "H", "Ile": "I",
-    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P",
-    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
-    "Ter": "*", "Sec": "U", "Pyl": "O", "Xaa": "X",
 }
 
 SV_ALTS = {"<BND>", "<DEL>", "<DUP>", "<INV>", "<TRA>"}
@@ -108,12 +77,6 @@ def run(cmd, env_extra=None, label=None):
             f"  stderr: {r.stderr[-1500:]}"
         )
     return r
-
-
-def normalize_hgvsp(s):
-    for three, one in THREE_TO_ONE.items():
-        s = s.replace(three, one)
-    return s
 
 
 def read_vcf_header(path):
@@ -187,16 +150,8 @@ def variant_key(row):
 # Comparison logic
 # ---------------------------------------------------------------------------
 
-def _field_category(col):
-    if col in CONVERSION_FIELDS:
-        return "CONVERSION"
-    if col in ANNOTATION_FIELDS:
-        return "ANNOTATION"
-    return "OTHER"
-
-
 def compare_mafs(ms_rows, vc_rows):
-    """Return a structured diff dict."""
+    """Return a structured diff dict comparing only CONVERSION_FIELDS."""
     ms_idx = defaultdict(list)
     for r in ms_rows:
         if r.get("Chromosome"):
@@ -209,12 +164,6 @@ def compare_mafs(ms_rows, vc_rows):
             vc_empty_chr += 1
             continue
         vc_idx[variant_key(r)] = r
-
-    # Collect all comparable columns
-    all_cols = set()
-    for r in ms_rows + vc_rows:
-        all_cols.update(r.keys())
-    compare_cols = sorted(all_cols - SKIP_FIELDS)
 
     only_in_vc, only_in_ms, diffs_by_variant = [], [], []
     matched_keys = set()
@@ -235,21 +184,11 @@ def compare_mafs(ms_rows, vc_rows):
             ))
 
         diffs = []
-        for col in compare_cols:
+        for col in sorted(CONVERSION_FIELDS):
             ms_val = ms_row.get(col, "")
             vc_val = vc_row.get(col, "")
-            if col in HGVS_FIELDS:
-                ms_cmp = normalize_hgvsp(ms_val)
-                vc_cmp = normalize_hgvsp(vc_val)
-            else:
-                ms_cmp, vc_cmp = ms_val, vc_val
-            if ms_cmp != vc_cmp:
-                diffs.append({
-                    "field": col,
-                    "ms_val": ms_val,
-                    "vc_val": vc_val,
-                    "category": _field_category(col),
-                })
+            if ms_val != vc_val:
+                diffs.append({"field": col, "ms_val": ms_val, "vc_val": vc_val})
 
         if diffs:
             diffs_by_variant.append({"key": k, "diffs": diffs})
@@ -286,6 +225,7 @@ def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc):
         f" Input:    {input_label}",
         f" Run:      {run_desc}",
         f" Tumor:    {tumor_id}" + (f"   Normal: {normal_id}" if normal_id else ""),
+        f" Compared: {', '.join(sorted(CONVERSION_FIELDS))}",
         SEP, "",
     ]
 
@@ -302,7 +242,7 @@ def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc):
 
     # Missing row warnings
     if diff["only_in_vc"]:
-        lines.append(f"  ⚠  {len(diff['only_in_vc'])} variant(s) in vcf2maf MISSING from mafsmith:")
+        lines.append(f"  WARNING: {len(diff['only_in_vc'])} variant(s) in vcf2maf MISSING from mafsmith:")
         for k, _ in diff["only_in_vc"][:20]:
             lines.append(f"     {k[0]}:{k[1]}  {k[2]}>{k[3]}")
         if len(diff["only_in_vc"]) > 20:
@@ -310,7 +250,7 @@ def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc):
         lines.append("")
 
     if diff["only_in_ms"]:
-        lines.append(f"  ⚠  {len(diff['only_in_ms'])} variant(s) in mafsmith MISSING from vcf2maf:")
+        lines.append(f"  WARNING: {len(diff['only_in_ms'])} variant(s) in mafsmith MISSING from vcf2maf:")
         for k, _ in diff["only_in_ms"][:20]:
             lines.append(f"     {k[0]}:{k[1]}  {k[2]}>{k[3]}")
         if len(diff["only_in_ms"]) > 20:
@@ -318,87 +258,46 @@ def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc):
         lines.append("")
 
     # Field mismatch summary
-    field_counts = defaultdict(lambda: {"count": 0, "category": "OTHER"})
+    field_counts: dict[str, int] = defaultdict(int)
     for v in diff["diffs_by_variant"]:
         for d in v["diffs"]:
-            field_counts[d["field"]]["count"] += 1
-            field_counts[d["field"]]["category"] = d["category"]
+            field_counts[d["field"]] += 1
 
     matched = diff["matched"]
     pct = lambda n: f"{n / matched * 100:.1f}%" if matched else "—"
 
     lines += [
         "FIELD MISMATCH SUMMARY",
-        f"  {'Field':<38} {'Category':<12} {'Count':>8}  {'%':>7}",
+        f"  {'Field':<38} {'Count':>8}  {'%':>7}",
         "  " + SEP2,
     ]
-    for cat in ("CONVERSION", "ANNOTATION", "OTHER"):
-        for field, info in sorted(field_counts.items(), key=lambda x: -x[1]["count"]):
-            if info["category"] != cat:
-                continue
-            lines.append(
-                f"  {field:<38} {cat:<12} {info['count']:>8}  {pct(info['count']):>7}"
-            )
+    for field, count in sorted(field_counts.items(), key=lambda x: -x[1]):
+        lines.append(f"  {field:<38} {count:>8}  {pct(count):>7}")
     if not field_counts:
-        lines.append("  (no differences found — tools agree on all compared fields)")
+        lines.append("  (no differences — tools agree on all conversion fields)")
     lines.append("")
 
     # Per-variant details
-    conv_variants = [v for v in diff["diffs_by_variant"]
-                     if any(d["category"] == "CONVERSION" for d in v["diffs"])]
-    ann_variants  = [v for v in diff["diffs_by_variant"]
-                     if any(d["category"] in ("ANNOTATION", "OTHER") for d in v["diffs"])
-                     and not any(d["category"] == "CONVERSION" for d in v["diffs"])]
-
-    # --- Conversion differences ---
+    n_diffs = len(diff["diffs_by_variant"])
     lines += [
         SEP,
-        f" CONVERSION DIFFERENCES ({len(conv_variants)} variant(s))",
+        f" CONVERSION DIFFERENCES ({n_diffs} variant(s))",
         " Fields that depend on VCF parsing, not which transcript was chosen.",
-        " These are the primary targets for bug fixes.",
         SEP, "",
     ]
-    if conv_variants:
-        for i, v in enumerate(conv_variants, 1):
+    if diff["diffs_by_variant"]:
+        for i, v in enumerate(diff["diffs_by_variant"], 1):
             k = v["key"]
-            lines.append(f"[{i}/{len(conv_variants)}]  {k[0]}:{k[1]}  {k[2]}>{k[3]}")
-            for d in sorted(v["diffs"], key=lambda x: (x["category"] != "CONVERSION", x["field"])):
-                tag = f"[{d['category']}]" if d["category"] != "CONVERSION" else ""
-                lines += [
-                    f"  {d['field']}{' ' + tag if tag else ''}:",
-                    f"    vcf2maf:   {d['vc_val']!r}",
-                    f"    mafsmith:  {d['ms_val']!r}",
-                ]
-            lines.append("")
-    else:
-        lines += ["  (none)", ""]
-
-    # --- Annotation differences (collapsed if many) ---
-    ann_cap = 100
-    lines += [
-        SEP,
-        f" ANNOTATION DIFFERENCES ({len(ann_variants)} annotation-only variant(s))",
-        " Likely due to different Ensembl gene model versions between",
-        " fastVEP's GFF3 and VEP 115 indexed cache.  Usually not bugs.",
-        SEP, "",
-    ]
-    if ann_variants:
-        shown = ann_variants[:ann_cap]
-        for i, v in enumerate(shown, 1):
-            k = v["key"]
-            lines.append(f"[{i}]  {k[0]}:{k[1]}  {k[2]}>{k[3]}")
-            for d in v["diffs"]:
+            lines.append(f"[{i}/{n_diffs}]  {k[0]}:{k[1]}  {k[2]}>{k[3]}")
+            for d in sorted(v["diffs"], key=lambda x: x["field"]):
                 lines += [
                     f"  {d['field']}:",
                     f"    vcf2maf:   {d['vc_val']!r}",
                     f"    mafsmith:  {d['ms_val']!r}",
                 ]
             lines.append("")
-        if len(ann_variants) > ann_cap:
-            lines.append(f"  ... {len(ann_variants) - ann_cap} more annotation-only variants not shown")
-            lines.append("")
     else:
-        lines += ["  (none)", ""]
+        lines += ["  (none — perfect agreement)", ""]
 
     report = "\n".join(lines) + "\n"
     with open(path, "w") as f:
@@ -515,7 +414,7 @@ def main():
         print("\nRunning mafsmith + fastVEP (all cores)...", flush=True)
         ms_cmd = [
             str(args.mafsmith), "vcf2maf",
-            "-i", str(vcf_path),    # reads gzip natively
+            "-i", str(plain_vcf),   # same subsampled file as vcf2maf.pl
             "-o", str(ms_maf),
             "--vcf-tumor-id", vcf_tumor_id,
             "--tumor-id",     tumor_id,
@@ -574,19 +473,13 @@ def main():
             write_diff_report(diff, diff_path, input_label,
                               tumor_id, normal_id, run_desc)
 
-            n_conv = len([v for v in diff["diffs_by_variant"]
-                          if any(d["category"] == "CONVERSION" for d in v["diffs"])])
-            n_ann  = len([v for v in diff["diffs_by_variant"]
-                          if any(d["category"] in ("ANNOTATION", "OTHER") for d in v["diffs"])
-                          and not any(d["category"] == "CONVERSION" for d in v["diffs"])])
+            n_diffs = len(diff["diffs_by_variant"])
 
             print(f"\n{'='*60}")
             print(f"Matched rows:          {diff['matched']:,}")
-            print(f"Variants with diffs:   {len(diff['diffs_by_variant']):,}")
-            print(f"  Conversion diffs:    {n_conv:,}  ← likely fixable bugs")
-            print(f"  Annotation-only:     {n_ann:,}  ← gene model version differences")
-            print(f"  Missing in mafsmith: {len(diff['only_in_vc']):,}")
-            print(f"  Missing in vcf2maf:  {len(diff['only_in_ms']):,}")
+            print(f"Conversion diffs:      {n_diffs:,}  ← likely fixable bugs")
+            print(f"Missing in mafsmith:   {len(diff['only_in_vc']):,}")
+            print(f"Missing in vcf2maf:    {len(diff['only_in_ms']):,}")
             print(f"\nOutputs written to {out_dir}/")
             print(f"  mafsmith.maf")
             print(f"  vcf2maf.maf")
