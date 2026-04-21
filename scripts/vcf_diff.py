@@ -103,29 +103,83 @@ def read_vcf_header(path):
     return samples, bool(has_chr)
 
 
-def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False):
-    """Write a plain-text VCF to dst, optionally capping at max_variants.
+def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False, seed=42):
+    """Write a plain-text VCF to dst, optionally reservoir-sampling max_variants.
+
+    When max_variants is set, uses Knuth reservoir sampling (Algorithm R) so
+    the selected variants are spread across the whole genome rather than
+    biased towards early chromosomes. The sample is written in original
+    genomic order (sorted by chrom/pos) so VEP/vcf2maf receive a valid VCF.
 
     add_chr_prefix: prepend 'chr' to chromosome names in data lines and
     ##contig headers (for VCFs using Ensembl-style names without prefix).
     """
+    import random
     opener = gzip.open if str(src).endswith((".gz", ".bgz")) else open
-    n = 0
-    with opener(src, "rt", errors="replace") as fin, open(dst, "w") as fout:
+
+    def _fix(line):
+        if add_chr_prefix:
+            line = "chr" + line
+        return line
+
+    def _chrom_key(line):
+        parts = line.split("\t")
+        chrom = parts[0].lstrip("chr") if parts else ""
+        try:
+            pos = int(parts[1]) if len(parts) > 1 else 0
+        except (ValueError, IndexError):
+            pos = 0
+        _special = {"X": 23, "Y": 24, "MT": 25, "M": 25}
+        try:
+            return (0, int(chrom), pos)
+        except ValueError:
+            return (0, _special.get(chrom, 99), pos) if chrom in _special else (1, chrom, pos)
+
+    header_lines = []
+    rng = random.Random(seed)
+
+    if max_variants is None:
+        n = 0
+        with opener(src, "rt", errors="replace") as fin, open(dst, "w") as fout:
+            for line in fin:
+                if line.startswith("#"):
+                    if add_chr_prefix and line.startswith("##contig=<ID="):
+                        line = line.replace("##contig=<ID=", "##contig=<ID=chr", 1)
+                    fout.write(line)
+                else:
+                    fout.write(_fix(line))
+                    n += 1
+        return n
+
+    # Reservoir sampling — single pass, O(k) memory
+    reservoir = []
+    n_total = 0
+    with opener(src, "rt", errors="replace") as fin:
         for line in fin:
             if line.startswith("#"):
                 if add_chr_prefix and line.startswith("##contig=<ID="):
-                    # Rewrite contig IDs: ##contig=<ID=1,...> → ##contig=<ID=chr1,...>
                     line = line.replace("##contig=<ID=", "##contig=<ID=chr", 1)
-                fout.write(line)
+                header_lines.append(line)
             else:
-                if max_variants is not None and n >= max_variants:
-                    break
-                if add_chr_prefix:
-                    line = "chr" + line
-                fout.write(line)
-                n += 1
-    return n
+                data = _fix(line)
+                n_total += 1
+                if len(reservoir) < max_variants:
+                    reservoir.append(data)
+                else:
+                    j = rng.randint(0, n_total - 1)
+                    if j < max_variants:
+                        reservoir[j] = data
+
+    # Sort by genomic position so VEP/vcf2maf receive a valid ordered VCF
+    reservoir.sort(key=_chrom_key)
+
+    with open(dst, "w") as fout:
+        for line in header_lines:
+            fout.write(line)
+        for line in reservoir:
+            fout.write(line)
+
+    return len(reservoir)
 
 
 def find_tool(name):
@@ -447,7 +501,7 @@ def main():
         n_variants = decompress_vcf(vcf_path, plain_vcf, args.max_variants,
                                     add_chr_prefix=add_chr)
         if args.max_variants:
-            print(f"  Subsampled to first {n_variants:,} variants", flush=True)
+            print(f"  Reservoir-sampled {n_variants:,} variants (genome-wide)", flush=True)
         else:
             print(f"  {n_variants:,} variants", flush=True)
 
