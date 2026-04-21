@@ -20,7 +20,7 @@ impl AlleleDepth {
 /// - VarScan 2: RD=ref, AD=alt (single value, not comma list)
 /// - Strelka SNVs: AU,CU,GU,TU counts per base
 /// - Strelka indels: TAR=ref_tier1,ref_tier2; TIR=alt_tier1,alt_tier2
-/// - SomaticSniper: DP4=ref_fwd,ref_rev,alt_fwd,alt_rev
+/// - SomaticSniper: DP4 for depth + BCOUNT=A,C,G,T for per-allele ref/alt counts
 /// - Ion Torrent: RO=ref, AO=alt
 /// - Total depth fallback: DP
 ///
@@ -124,17 +124,45 @@ pub fn extract_depth<F: AsRef<str>>(
         };
     }
 
-    // 5. SomaticSniper: DP4=ref_fwd,ref_rev,alt_fwd,alt_rev
-    if let Some(dp4) = get("DP4") {
-        let parts: Vec<u32> = dp4.split(',').filter_map(|v| v.parse().ok()).collect();
-        if parts.len() == 4 {
-            let ref_count = parts[0] + parts[1];
-            let alt_count = parts[2] + parts[3];
-            return AlleleDepth {
-                ref_count: Some(ref_count),
-                alt_count: Some(alt_count),
-                total_depth: dp.or(Some(ref_count + alt_count)),
-            };
+    // 5. SomaticSniper: has both DP4 and BCOUNT.
+    // When BCOUNT is present alongside DP4, use BCOUNT for per-allele ref/alt counts
+    // (matches vcf2maf.pl behavior). DP4 alt_fwd+alt_rev counts ALL non-ref reads, not
+    // just the specific alt allele — wrong for multi-allelic sites and single-allelic
+    // sites where multiple alt bases are observed.
+    if get("DP4").is_some() {
+        if let Some(bc) = get("BCOUNT") {
+            let bc_parts: Vec<u32> = bc.split(',').filter_map(|v| v.parse().ok()).collect();
+            if bc_parts.len() == 4 {
+                let idx_for = |b: char| match b {
+                    'A' => 0usize, 'C' => 1, 'G' => 2, 'T' => 3, _ => 0,
+                };
+                let ref_base = ref_allele.chars().next().unwrap_or('N').to_ascii_uppercase();
+                let alt_base = alt_allele.chars().next().unwrap_or('N').to_ascii_uppercase();
+                let ref_count = bc_parts.get(idx_for(ref_base)).copied();
+                let alt_count = bc_parts.get(idx_for(alt_base)).copied();
+                let dp4_total = get("DP4").and_then(|dp4| {
+                    let p: Vec<u32> = dp4.split(',').filter_map(|v| v.parse().ok()).collect();
+                    if p.len() == 4 { Some(p.iter().sum()) } else { None }
+                });
+                return AlleleDepth {
+                    ref_count,
+                    alt_count,
+                    total_depth: dp.or(dp4_total).or(Some(bc_parts.iter().sum())),
+                };
+            }
+        }
+        // DP4 only (no BCOUNT): ref_fwd+ref_rev, alt_fwd+alt_rev
+        if let Some(dp4) = get("DP4") {
+            let parts: Vec<u32> = dp4.split(',').filter_map(|v| v.parse().ok()).collect();
+            if parts.len() == 4 {
+                let ref_count = parts[0] + parts[1];
+                let alt_count = parts[2] + parts[3];
+                return AlleleDepth {
+                    ref_count: Some(ref_count),
+                    alt_count: Some(alt_count),
+                    total_depth: dp.or(Some(ref_count + alt_count)),
+                };
+            }
         }
     }
 
@@ -154,7 +182,7 @@ pub fn extract_depth<F: AsRef<str>>(
         };
     }
 
-    // 7. BCOUNT: allele counts as A,C,G,T
+    // 7. BCOUNT only (no DP4): allele counts as A,C,G,T
     if let Some(bc) = get("BCOUNT") {
         let parts: Vec<u32> = bc.split(',').filter_map(|v| v.parse().ok()).collect();
         if parts.len() == 4 {
@@ -219,11 +247,23 @@ mod tests {
     }
 
     #[test]
-    fn dp4() {
+    fn dp4_only() {
         let keys = vec!["GT", "DP4"];
         let vals = vec!["0/1", "10,20,5,3"];
         let d = extract_depth(&keys, &vals, "A", "T", 1);
         assert_eq!(d.ref_count, Some(30));
         assert_eq!(d.alt_count, Some(8));
+    }
+
+    #[test]
+    fn somaticsniper_dp4_bcount() {
+        // SomaticSniper T>C record: DP4 alt total=8 (5 fwd+3 rev), but BCOUNT[C]=7 (one
+        // read supports G not C). vcf2maf.pl uses BCOUNT, so mafsmith must too.
+        let keys = vec!["GT", "DP", "DP4", "BCOUNT"];
+        let vals = vec!["0/1", "44", "17,19,5,3", "0,7,1,36"];
+        let d = extract_depth(&keys, &vals, "T", "C", 1);
+        assert_eq!(d.ref_count, Some(36)); // BCOUNT[T]
+        assert_eq!(d.alt_count, Some(7));  // BCOUNT[C], not DP4 alt(8)
+        assert_eq!(d.total_depth, Some(44)); // DP wins over DP4 sum
     }
 }

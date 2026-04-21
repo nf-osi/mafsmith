@@ -56,6 +56,7 @@ target/release/mafsmith vcf2maf \
 | Truncated AD alt-index OOB: `t_ref_count`/`t_alt_count` serialized as `''` instead of `'.'` | For multi-allelic records where AD has fewer values than alts (e.g. AD="0,2" with 3 alleles and effective_alt_vcf_idx=2), alt_count=None was serialized as `''`. vcf2maf.pl outputs `'.'`. | `vcf2maf.rs`: added `tumor_alt_oor`/`normal_alt_oor` flags when AD has real values but alt_vcf_idx is OOB; required `ad_len >= 2` to avoid false-positive on VarScan single-value AD | syn5555584, syn5553158 |
 | VarScan somatic: all depth fields outputting `'.'`, all TSA1 defaulting to REF | Two bugs: (1) `ad_oor` check fired on VarScan's single-value AD (ad_len=1 <= alt_vcf_idx=1), masking VarScan depth extraction. (2) Depth-based hom_alt TSA1 fallback used `ad_vals.get(alt_vcf_idx)` which fails for VarScan's AD[0] = alt_count. | (1) `vcf2maf.rs` `ad_oor`: add `ad_len >= 2` guard. (2) Replace AD-index hom_alt logic with `extract_depth()` call that handles all callers | syn6840402 (933→0 diffs) |
 | Normal sample wrong alt depth for multi-allelic records | `extract_depth` for normal sample always used `alt_vcf_idx=1` (first ALT) regardless of which alt was selected. For GT=1/2 records the normal sample's AD index for the effective alt was never used. | `vcf2maf.rs` line 368: pass `effective_alt` and `effective_alt_vcf_idx` to normal `extract_depth` (same as tumor) | syn5553155 (n_alt_count diffs fixed) |
+| SomaticSniper: t_alt_count/n_alt_count off by 1–many | `DP4` alt_fwd+alt_rev counts ALL non-ref reads at a site, not just the specific ALT allele. For T>C records with background G reads, DP4 over-counts. vcf2maf.pl uses `BCOUNT` (per-base A,C,G,T counts) for per-allele ref/alt counts. Both fields are always present in SomaticSniper VCFs. | `depth.rs` case 5: when BCOUNT is present alongside DP4, use BCOUNT[ref_base]/BCOUNT[alt_base] for ref/alt counts; use DP4 sum for total depth only | WGS_FD_1.bwa.somaticSniper.vcf.gz (270→0 diffs) |
 
 ### Known remaining differences vs vcf2maf.pl
 
@@ -89,19 +90,37 @@ target/release/mafsmith vcf2maf \
 | VA02.vcf.gz, VA06.vcf.gz | SMMART DeepVariant | DeepVariant 1.2.0 | single-sample gVCF with `VAF` FORMAT field (absent in VA01); GT=`./.' or 0/0 |
 | HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus (ADALL field) | uses `ADALL` (all-dataset allele depths) in addition to `AD` |
 | HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus | same format as HG001 |
+| WGS_FD_1.bwa.somaticSniper.vcf.gz | SEQC2 HCC1395 | SomaticSniper paired T/N | `DP4`+`BCOUNT` FORMAT (no `AD`); samples named TUMOR/NORMAL |
 
 ## Performance
 
-Benchmarked on a 6,292-variant SV VCF (post-fastVEP annotation):
+All benchmarks on AWS c6a.4xlarge (AMD EPYC 7R13, 16 vCPU, 30 GiB RAM). Full per-sample data in `results/`.
 
-| Tool | Mean time | Variants/s |
-|------|-----------|-----------|
-| mafsmith (`--skip-annotation`) | ~0.06s | ~104,000 |
-| vcf2maf.pl (`--inhibit-vep`) | ~13.9s | ~132 |
+### Conversion-only (`--skip-annotation` / `--inhibit-vep`)
 
-**~229× faster** for the conversion step. Full pipeline speedup (including fastVEP): ~4.8×.
+**Somatic T/N datasets** (5 datasets: GIAB HG008 Mutect2/Strelka2, SEQC2 Mutect2/Strelka; 3 iterations each):
 
-Previously benchmarked on a 305K-variant annotated VCF (578 MB): mafsmith ~6.2s / ~49,000 variants/s (pre-optimization). On the `optimize/perf` branch this improves to ~5× due to rayon parallel processing and allocation reduction.
+| Mode | Mean speedup | Throughput |
+|------|-------------|-----------|
+| mafsmith 1-core vs vcf2maf.pl | 39.1× | 255,807 vs 6,568 variants/s |
+| mafsmith 16-core vs vcf2maf.pl | 69.5× | 454,661 vs 6,568 variants/s |
+
+**GIAB germline benchmark** (HG001–HG007, 27.5M total variants; 3 iterations each):
+
+| Mode | Mean speedup | Throughput |
+|------|-------------|-----------|
+| mafsmith 1-core vs vcf2maf.pl | 79.4× | 558,914 vs 7,036 variants/s |
+
+### Annotated pipeline (mafsmith+fastVEP vs vcf2maf.pl+VEP 115)
+
+Same 5 somatic T/N datasets; fastVEP 16-core Rayon vs VEP `--vep-forks N`:
+
+| VEP forks | Speedup (1-core) | Speedup (16-core) |
+|-----------|-----------------|-------------------|
+| 16 (symmetric) | 25.3× | 65.5× |
+| 4 (typical deployment) | 31.5× | 83.4× |
+
+Detailed tables in `results/somatic_tn_benchmark.md` and `results/conversion_benchmark_giab_grch38.md`.
 
 ## Benchmarking scripts
 
