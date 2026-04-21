@@ -22,6 +22,14 @@ pub enum Command {
     Fetch(FetchArgs),
 }
 
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum Annotator {
+    /// Use fastVEP for annotation (default; requires `mafsmith fetch`)
+    Fastvep,
+    /// Use Ensembl VEP for annotation (requires VEP installed separately)
+    Vep,
+}
+
 #[derive(ValueEnum, Clone, Debug)]
 pub enum Genome {
     Grch38,
@@ -73,15 +81,31 @@ pub struct Vcf2mafArgs {
     #[arg(long)]
     pub custom_enst: Option<PathBuf>,
 
-    /// Override path to fastVEP binary
+    /// Annotation engine: fastvep (default) or vep (Ensembl VEP)
+    #[arg(long, value_enum, default_value = "fastvep")]
+    pub annotator: Annotator,
+
+    /// Override path to fastVEP binary (fastvep annotator only)
     #[arg(long)]
     pub fastvep_path: Option<PathBuf>,
+
+    /// Path to Ensembl VEP binary (vep annotator only; defaults to `vep` in PATH)
+    #[arg(long)]
+    pub vep_path: Option<PathBuf>,
+
+    /// VEP cache directory (vep annotator only; defaults to ~/.vep)
+    #[arg(long)]
+    pub vep_data: Option<PathBuf>,
+
+    /// Number of forked VEP processes (vep annotator only; 0 = single-threaded)
+    #[arg(long, default_value_t = 0)]
+    pub vep_forks: u32,
 
     /// Override reference FASTA (default: from mafsmith data dir)
     #[arg(long)]
     pub ref_fasta: Option<PathBuf>,
 
-    /// Override gene GFF3 file (default: from mafsmith data dir)
+    /// Override gene GFF3 file (default: from mafsmith data dir; fastvep annotator only)
     #[arg(long)]
     pub gff3: Option<PathBuf>,
 

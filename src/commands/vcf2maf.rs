@@ -5,7 +5,7 @@ use crate::{
         depth::extract_depth,
         transcript::select_transcript_light,
     },
-    cli::Vcf2mafArgs,
+    cli::{Annotator, Vcf2mafArgs},
     maf::{record::MafRecord, writer::MafWriter},
     vcf::{normalization::{maf_positions, normalize}, VcfReader},
 };
@@ -51,15 +51,44 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         }
         (args.input_vcf.clone(), None)
     } else {
-        let ref_fasta = resolve_ref_fasta(&args.ref_fasta, &data_dir, genome_str)?;
-        sv_ref_fasta = Some(ref_fasta.clone());
-        validate_ref_fasta(&ref_fasta, &args.input_vcf)?;
-        let gff3 = resolve_gff3(&args.gff3, &data_dir, genome_str)?;
-        let fastvep = resolve_fastvep(&args.fastvep_path, &data_dir)?;
-        info!("Annotating variants with fastVEP...");
-        let tmp = run_fastvep(&fastvep, &args.input_vcf, &ref_fasta, &gff3)?;
-        let path = tmp.path().to_owned();
-        (path, Some(tmp))
+        match args.annotator {
+            Annotator::Fastvep => {
+                let ref_fasta = resolve_ref_fasta(&args.ref_fasta, &data_dir, genome_str)?;
+                sv_ref_fasta = Some(ref_fasta.clone());
+                validate_ref_fasta(&ref_fasta, &args.input_vcf)?;
+                let gff3 = resolve_gff3(&args.gff3, &data_dir, genome_str)?;
+                let fastvep = resolve_fastvep(&args.fastvep_path, &data_dir)?;
+                info!("Annotating variants with fastVEP...");
+                let tmp = run_fastvep(&fastvep, &args.input_vcf, &ref_fasta, &gff3)?;
+                let path = tmp.path().to_owned();
+                (path, Some(tmp))
+            }
+            Annotator::Vep => {
+                // Ref FASTA is optional in VEP mode (VEP manages its own cache).
+                // Resolve it for SV base lookup and build validation if available.
+                let resolved_fasta = args.ref_fasta.clone().or_else(|| {
+                    let p = data_dir.join(genome_str).join("reference.fa");
+                    if p.exists() { Some(p) } else { None }
+                });
+                if let Some(ref rf) = resolved_fasta {
+                    sv_ref_fasta = Some(rf.clone());
+                    validate_ref_fasta(rf, &args.input_vcf)?;
+                } else {
+                    warn!(
+                        "No reference FASTA available — genome build not validated. \
+                         Pass --ref-fasta if needed for SV secondary row base lookup."
+                    );
+                }
+                let vep = resolve_vep(&args.vep_path)?;
+                let vep_data = args.vep_data.clone().unwrap_or_else(|| {
+                    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".vep")
+                });
+                info!("Annotating variants with Ensembl VEP...");
+                let tmp = run_vep(&vep, &args.input_vcf, &vep_data, genome_str, args.vep_forks)?;
+                let path = tmp.path().to_owned();
+                (path, Some(tmp))
+            }
+        }
     };
 
     // Parse and convert
@@ -889,6 +918,65 @@ fn run_fastvep(
 
     if !status.success() {
         bail!("fastVEP exited with status {}", status);
+    }
+    Ok(tmp)
+}
+
+fn resolve_vep(cli: &Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(p) = cli {
+        return Ok(p.clone());
+    }
+    let out = Command::new("which").arg("vep").output();
+    if let Ok(o) = out {
+        if o.status.success() {
+            let path = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+            return Ok(PathBuf::from(path));
+        }
+    }
+    bail!(
+        "Ensembl VEP not found in PATH. Install it (e.g. `conda install -c bioconda ensembl-vep`) \
+         or pass --vep-path."
+    );
+}
+
+fn run_vep(
+    vep: &Path,
+    input_vcf: &Path,
+    vep_data: &Path,
+    assembly: &str,
+    forks: u32,
+) -> Result<NamedTempFile> {
+    let tmp = NamedTempFile::new().context("Cannot create temp file for VEP output")?;
+
+    let mut cmd = Command::new(vep);
+    cmd.args([
+        "--input_file",  input_vcf.to_str().unwrap(),
+        "--output_file", tmp.path().to_str().unwrap(),
+        "--format",      "vcf",
+        "--vcf",
+        "--cache",
+        "--offline",
+        "--dir_cache",   vep_data.to_str().unwrap(),
+        "--assembly",    assembly,
+        "--hgvs",
+        "--hgvsg",
+        "--symbol",
+        "--biotype",
+        "--canonical",
+        "--mane",
+        "--no_stats",
+        "--buffer_size", "5000",
+        "--force_overwrite",
+    ]);
+    if forks > 0 {
+        cmd.args(["--fork", &forks.to_string()]);
+    }
+
+    let status = cmd.status()
+        .context("Failed to run VEP. Is it installed and in PATH?")?;
+
+    if !status.success() {
+        bail!("VEP exited with status {}", status);
     }
     Ok(tmp)
 }
