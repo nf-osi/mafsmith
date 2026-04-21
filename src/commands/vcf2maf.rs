@@ -84,7 +84,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".vep")
                 });
                 info!("Annotating variants with Ensembl VEP...");
-                let tmp = run_vep(&vep, &args.input_vcf, &vep_data, genome_str, args.vep_forks)?;
+                let tmp = run_vep(&vep, &args.input_vcf, &vep_data, resolved_fasta.as_deref(), genome_str, args.vep_forks)?;
                 let path = tmp.path().to_owned();
                 (path, Some(tmp))
             }
@@ -943,12 +943,19 @@ fn run_vep(
     vep: &Path,
     input_vcf: &Path,
     vep_data: &Path,
+    ref_fasta: Option<&Path>,
     assembly: &str,
     forks: u32,
 ) -> Result<NamedTempFile> {
     let tmp = NamedTempFile::new().context("Cannot create temp file for VEP output")?;
 
-    let mut cmd = Command::new(vep);
+    // Use the colocated perl (conda env) if available, so VEP's Perl modules
+    // resolve correctly rather than falling back to the system perl.
+    let colocated_perl = vep.parent().map(|d| d.join("perl")).filter(|p| p.exists());
+    let mut cmd = match &colocated_perl {
+        Some(perl) => { let mut c = Command::new(perl); c.arg(vep); c }
+        None       => Command::new(vep),
+    };
     cmd.args([
         "--input_file",  input_vcf.to_str().unwrap(),
         "--output_file", tmp.path().to_str().unwrap(),
@@ -968,6 +975,9 @@ fn run_vep(
         "--buffer_size", "5000",
         "--force_overwrite",
     ]);
+    if let Some(fasta) = ref_fasta {
+        cmd.args(["--fasta", fasta.to_str().unwrap()]);
+    }
     if forks > 0 {
         cmd.args(["--fork", &forks.to_string()]);
     }
