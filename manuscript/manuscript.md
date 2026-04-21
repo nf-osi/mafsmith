@@ -10,7 +10,7 @@ Robert Allaway^1^, [additional authors TBD]
 
 ## Abstract
 
-The Mutation Annotation Format (MAF) is the standard interchange format for somatic variant data in cancer genomics, required by the NCI Genomic Data Commons and widely used in downstream analytical pipelines. Converting variant call format (VCF) files to MAF requires functional annotation (via tools such as the Ensembl Variant Effect Predictor) followed by complex allele normalisation and field-mapping logic. The de facto reference implementation, vcf2maf.pl, depends on a large Perl software stack and is prohibitively slow for large cohort analyses. We present mafsmith, a Rust implementation of the VCF-to-MAF conversion pipeline. mafsmith uses fastVEP for annotation and reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl, producing field-for-field identical output across six validated caller types. Benchmarked on seven GIAB reference samples totalling 27.5 million variants, mafsmith achieves **79.4-fold** faster conversion of pre-annotated VCFs (range 74.3–84.1×), enabling rapid processing of large cancer cohorts on standard hardware. mafsmith is open source and available at https://github.com/nf-osi/mafsmith.
+The Mutation Annotation Format (MAF) is the standard interchange format for somatic variant data in cancer genomics, required by the NCI Genomic Data Commons and widely used in downstream analytical pipelines. Converting variant call format (VCF) files to MAF requires functional annotation (via tools such as the Ensembl Variant Effect Predictor) followed by complex allele normalisation and field-mapping logic. The de facto reference implementation, vcf2maf.pl, depends on a large Perl software stack and is prohibitively slow for large cohort analyses. We present mafsmith, a Rust implementation of the VCF-to-MAF conversion pipeline. mafsmith uses fastVEP for annotation and reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl, producing field-for-field identical output across thirteen validated caller types and formats spanning germline, somatic, and structural variant VCFs. Benchmarked on seven GIAB reference samples totalling 27.5 million variants, mafsmith achieves **79.4-fold** faster conversion of pre-annotated VCFs (range 74.3–84.1×), enabling rapid processing of large cancer cohorts on standard hardware. mafsmith is open source and available at https://github.com/nf-osi/mafsmith.
 
 ---
 
@@ -24,7 +24,7 @@ However, vcf2maf.pl has significant performance limitations. Running VEP for eac
 
 Recent development of fastVEP [Huang, 2026], a reimplementation of VEP's core annotation logic in the Rust programming language, substantially reduces annotation time — achieving up to 130-fold speedup over the original Perl VEP while maintaining complete concordance. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.pl, which processes variants at approximately 130 variants/second even when annotation is skipped. The annotation and conversion bottlenecks therefore call for complementary solutions.
 
-Here we describe mafsmith, a Rust implementation of the complete VCF-to-MAF conversion pipeline that pairs naturally with fastVEP to replace the entire vcf2maf.pl + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics — memory safety, zero-cost abstractions, and native parallelism — to achieve throughput that is impractical with the incumbent Perl/Python implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf.pl from first principles, targeting field-for-field identical output. We validate mafsmith against vcf2maf.pl across six distinct variant caller types, demonstrate **79.4-fold** speedup for the conversion step alone (range 74.3–84.1× across seven GIAB reference samples), and describe the specific edge cases and caller-specific conventions that required careful implementation to achieve full concordance.
+Here we describe mafsmith, a Rust implementation of the complete VCF-to-MAF conversion pipeline that pairs naturally with fastVEP to replace the entire vcf2maf.pl + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics — memory safety, zero-cost abstractions, and native parallelism — to achieve throughput that is impractical with the incumbent Perl/Python implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf.pl from first principles, targeting field-for-field identical output. We validate mafsmith against vcf2maf.pl across thirteen distinct variant caller types and formats spanning germline, somatic, and structural variant VCFs, demonstrate **79.4-fold** speedup for the conversion step alone (range 74.3–84.1× across seven GIAB reference samples), and describe the specific edge cases and caller-specific conventions that required careful implementation to achieve full concordance.
 
 ---
 
@@ -66,18 +66,26 @@ The conversion step (post-annotation) uses Rayon [CITATION: Rayon] for parallel 
 
 ### Validation
 
-We validated mafsmith against vcf2maf.pl across six caller types, comparing all key MAF fields (`Hugo_Symbol`, `Variant_Classification`, `Variant_Type`, `Reference_Allele`, `Tumor_Seq_Allele1`, `Tumor_Seq_Allele2`, `HGVSc`, `HGVSp`, `HGVSp_Short`, `Transcript_ID`, `Exon_Number`, `t_depth`, `t_ref_count`, `t_alt_count`, `n_depth`, `n_ref_count`, `n_alt_count`) on the same fastVEP-annotated input (Table 1). For all six caller types, mafsmith produced 0 field-level mismatches across 20,000 variants per file with `--strict` mode enabled.
+We validated mafsmith against vcf2maf.pl across thirteen caller types and VCF formats, comparing all key MAF fields (`Hugo_Symbol`, `Variant_Classification`, `Variant_Type`, `Reference_Allele`, `Tumor_Seq_Allele1`, `Tumor_Seq_Allele2`, `HGVSc`, `HGVSp`, `HGVSp_Short`, `Transcript_ID`, `Exon_Number`, `t_depth`, `t_ref_count`, `t_alt_count`, `n_depth`, `n_ref_count`, `n_alt_count`) on the same fastVEP-annotated input (Table 1). For all caller types, mafsmith produced 0 conversion-field mismatches in `--strict` mode. Remaining differences between tools are restricted to `Variant_Classification` for ~2–5 variants per dataset at gene-boundary regions where tools select different canonical transcripts, reflecting different Ensembl gene model versions rather than conversion logic.
 
-**Table 1. Validation of mafsmith against vcf2maf.pl (20,000 variants per caller type, --strict mode).**
+**Table 1. Validation of mafsmith against vcf2maf.pl (≥ 3,000 variants per dataset, --strict mode, 0 conversion-field mismatches in all cases).**
 
-| Caller | VCF type | Synapse ID | Mismatches |
-|--------|----------|------------|-----------|
-| DRAGEN RefCall | Single-sample, GT=`0/0`/`./.'` | syn31624545 | 0 / 20,000 |
-| MuTect2 | Single-sample GRCh38 | syn64156972 | 0 / 20,000 |
-| FreeBayes | Single-sample | syn31624535 | 0 / 20,000 |
-| Strelka2 | Paired tumour/normal | syn31624939 | 0 / 20,000 |
-| Strelka2 somatic indels | Paired tumour/normal | syn68172710 | 0 / 20,000 |
-| SV callers (Manta/DELLY) | SV-only | syn21296193 | 0 / 398 |
+| Caller | VCF type / FORMAT fields | Source | Variants compared |
+|--------|--------------------------|--------|-------------------|
+| DeepVariant 1.2.0 | Single-sample gVCF (GT=`0/0`/`./.'`) | syn31624545 | 20,000 |
+| DeepVariant 1.2.0 | Single-sample gVCF with `VAF` field | syn4988483 (VA02, VA06) | 20,000 each |
+| GATK MuTect2 | Single-sample GRCh38 | syn64156972; syn31624525 | 20,000 each |
+| GATK MuTect2 (paired T/N) | `GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT | GIAB HG008; SEQC2 HCC1395 | 20,000 each |
+| FreeBayes | Single-sample | syn31624535 | 20,000 |
+| Strelka2 germline | Single-sample `variants.vcf` and `genome.vcf` | syn31624939; syn31624637 | 20,000 each |
+| Strelka2 somatic SNVs | Paired T/N; per-base `AU/CU/GU/TU` depth fields | GIAB HG008; SEQC2 HCC1395 | 20,000 each |
+| Strelka2 somatic indels | Paired T/N; `TAR`/`TIR` depth fields | syn68172710; GIAB HG008 | 20,000 each |
+| SV callers (Manta/DELLY) | SV-only; BND, DEL, DUP, INV symbolic ALTs | syn21296193 | 398 (all SVs) |
+| VarScan2 somatic | Paired T/N; `RD`+`AD` FORMAT | syn6840402 | 20,000 |
+| VarDict (paired T/N) | `RD` strand-bias field coexists with standard `AD` | syn6039268 | 20,000 |
+| SomaticSniper | Paired T/N; `DP4`+`BCOUNT` FORMAT (no `AD`) | SEQC2 HCC1395 | 20,000 |
+| GIAB germline benchmarks | Multi-caller consensus; `ADALL` field; GRCh38 | HG001–HG007 (NIST v4.2.1) | 20,000 each |
+| COSMIC v103 | Annotation database VCF (no sample columns); GRCh38 | GenomeScreensMutant; NonCodingVariants | 3,000 each |
 
 ### Performance
 
@@ -148,20 +156,23 @@ mafsmith currently uses a prefix/suffix-stripping approach for allele normalisat
 
 ## Conclusion
 
-mafsmith is a fast, self-contained reimplementation of the vcf2maf.pl conversion pipeline in Rust. It produces field-for-field identical MAF output across six distinct caller types while achieving **47.6-fold** faster conversion on a single core (range 46.6–48.6×) and **79.4-fold** faster on 16 cores (range 74.3–84.1×) across seven GIAB reference samples totalling 27.5 million variants, making large-cohort VCF-to-MAF conversion practical on standard compute infrastructure. mafsmith is open source (Apache 2.0) and available at https://github.com/nf-osi/mafsmith.
+mafsmith is a fast, self-contained reimplementation of the vcf2maf.pl conversion pipeline in Rust. It produces field-for-field identical MAF output across thirteen distinct caller types and VCF formats — spanning germline, somatic, structural variant, and annotation-database VCFs — while achieving **47.6-fold** faster conversion on a single core (range 46.6–48.6×) and **79.4-fold** faster on 16 cores (range 74.3–84.1×) across seven GIAB reference samples totalling 27.5 million variants, making large-cohort VCF-to-MAF conversion practical on standard compute infrastructure. mafsmith is open source (Apache 2.0) and available at https://github.com/nf-osi/mafsmith.
 
 ---
 
 ## Data availability
 
-Validation VCF files are available from the NF-OSI Synapse project (syn16858331) at https://synapse.org. mafsmith source code and release binaries are available at https://github.com/nf-osi/mafsmith.
+mafsmith source code and release binaries are available at https://github.com/nf-osi/mafsmith. Validation VCF datasets are available from the sources listed below.
 
-Somatic benchmark VCF datasets used in this work:
+Validation and benchmark VCF datasets used in this work:
 
+- **NF-OSI Synapse project (syn16858331):** Validation VCF files from multiple callers (syn31624545, syn64156972, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637, syn4988483). Available at: https://synapse.org
 - **GIAB HG008 somatic (NYGC pipeline, GRCh38):** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/
-- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, hg38):** Paired tumor/normal MuTect2 and Strelka VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/
+- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38):** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/
 - **COLO829 somatic SV truth set (hg38):** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Zenodo: https://zenodo.org/records/7515830
-- **GIAB germline benchmarks (HG001–HG007, GRCh38):** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/
+- **GIAB germline benchmarks (HG001–HG007, GRCh38):** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking and validation. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/
+- **COSMIC v103 (GRCh38):** Genome Screens Mutant (Normal) and Non-Coding Variants VCFs used for validation of annotation-database VCF format handling. Available from COSMIC under the COSMIC licence: https://cancer.sanger.ac.uk/cosmic/download
+- **ICGC PCAWG cell-line VCFs (GRCh37):** DKFZ SNV/MNV somatic VCFs for HCC1143 and HCC1954 cell lines from the ICGC Pan-Cancer Analysis of Whole Genomes (PCAWG) open data release. Available via the ICGC-ARGO open-access S3 bucket at https://object.genomeinformatics.org (bucket: `icgc25k-open`; no sign request required for open-tier data).
 
 ---
 

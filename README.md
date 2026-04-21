@@ -122,22 +122,30 @@ mafsmith vcf2vcf -i input.vcf -o normalized.vcf
 
 ## Compatibility with vcf2maf.pl
 
-mafsmith targets field-for-field agreement with `vcf2maf.pl --inhibit-vep` (same fastVEP-annotated input). Validated to 0 mismatches across 20,000 variants each for the following caller types:
+mafsmith targets field-for-field agreement with `vcf2maf.pl --inhibit-vep` (same fastVEP-annotated input). Validated to 0 conversion-field mismatches in `--strict` mode across the following caller types and datasets:
 
-| Caller | VCF type | Synapse example |
-|--------|----------|----------------|
-| DRAGEN RefCall | Single-sample, GT=`0/0`/`./.'` | syn31624545 |
-| MuTect2 | Single-sample GRCh38 | syn64156972 |
+| Caller | VCF type | Source |
+|--------|----------|--------|
+| DeepVariant 1.2.0 | Single-sample gVCF (GT=`0/0`/`./.'`), with and without `VAF` field | syn31624545; syn4988483 (VA02, VA06) |
+| GATK MuTect2 | Single-sample GRCh38 | syn64156972; syn31624525 |
+| GATK MuTect2 (paired T/N) | Paired tumor/normal (`GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT) | GIAB HG008; SEQC2 HCC1395 |
 | FreeBayes | Single-sample | syn31624535 |
-| Strelka2 | Paired tumor/normal | syn31624939 |
-| Strelka2 somatic indels | Paired tumor/normal | syn68172710 |
-| SV callers (Manta/DELLY) | SV-only | syn21296193 |
+| Strelka2 germline | Single-sample (`variants.vcf` and `genome.vcf` formats) | syn31624939; syn31624637 |
+| Strelka2 somatic SNVs | Paired T/N (per-base `AU/CU/GU/TU` depth fields) | GIAB HG008; SEQC2 HCC1395 |
+| Strelka2 somatic indels | Paired T/N (`TAR`/`TIR` depth fields) | syn68172710; GIAB HG008 |
+| SV callers (Manta/DELLY) | SV-only (BND, DEL, DUP, INV symbolic ALTs) | syn21296193 |
+| VarScan2 somatic | Paired T/N (`RD`+`AD` FORMAT) | syn6840402 |
+| VarDict | Paired T/N (`RD` strand-bias field coexists with `AD`) | syn6039268 |
+| SomaticSniper | Paired T/N (`DP4`+`BCOUNT` FORMAT, no `AD`) | SEQC2 HCC1395 |
+| GIAB germline benchmarks (HG001–HG007) | Multi-caller consensus (`ADALL` field), GRCh38 | NIST v4.2.1 |
+| COSMIC v103 | Annotation database VCF (no sample columns), GRCh38 | COSMIC GenomeScreensMutant; NonCodingVariants |
 
 ### Known intentional differences
 
 - **`--strict` mode off (default)**: when a caller emits a truncated `AD` array (fewer values than `REF + all ALTs`), mafsmith still extracts available depth counts. Use `--strict` to output `.` for those fields instead, matching `vcf2maf.pl` exactly.
 - **SV secondary rows**: mafsmith emits secondary breakpoint rows with the actual partner chromosome/position. `vcf2maf.pl` emits them with an empty `Chromosome` field (a known bug).
 - **Multi-allelic tie-breaking**: when two ALTs have equal depth, tie-breaking may differ from `vcf2maf.pl` for a small number of variants (~4 per 50k-variant file).
+- **Transcript selection at gene boundaries**: for variants near 5′/3′ UTR–flank and Intron/RNA boundaries, mafsmith and vcf2maf.pl may select different canonical transcripts, affecting `Variant_Classification` for ~2–5 variants per dataset. This reflects different gene-model versions rather than a conversion bug.
 
 ## Supported genomes
 

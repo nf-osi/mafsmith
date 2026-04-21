@@ -103,17 +103,26 @@ def read_vcf_header(path):
     return samples, bool(has_chr)
 
 
-def decompress_vcf(src, dst, max_variants=None):
-    """Write a plain-text VCF to dst, optionally capping at max_variants."""
+def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False):
+    """Write a plain-text VCF to dst, optionally capping at max_variants.
+
+    add_chr_prefix: prepend 'chr' to chromosome names in data lines and
+    ##contig headers (for VCFs using Ensembl-style names without prefix).
+    """
     opener = gzip.open if str(src).endswith((".gz", ".bgz")) else open
     n = 0
     with opener(src, "rt", errors="replace") as fin, open(dst, "w") as fout:
         for line in fin:
             if line.startswith("#"):
+                if add_chr_prefix and line.startswith("##contig=<ID="):
+                    # Rewrite contig IDs: ##contig=<ID=1,...> → ##contig=<ID=chr1,...>
+                    line = line.replace("##contig=<ID=", "##contig=<ID=chr", 1)
                 fout.write(line)
             else:
                 if max_variants is not None and n >= max_variants:
                     break
+                if add_chr_prefix:
+                    line = "chr" + line
                 fout.write(line)
                 n += 1
     return n
@@ -429,8 +438,14 @@ def main():
         vc_work.mkdir()
         plain_vcf = vc_work / "input.vcf"
 
+        # GRCh38/GRCm39 reference FASTAs use chr-prefix; add it if the VCF lacks it.
+        add_chr = (not has_chr) and args.genome in ("grch38", "grcm39")
+        if add_chr:
+            print("  Note: adding chr prefix (VCF uses Ensembl-style names)", flush=True)
+
         print(f"\nPreparing plain VCF...", flush=True)
-        n_variants = decompress_vcf(vcf_path, plain_vcf, args.max_variants)
+        n_variants = decompress_vcf(vcf_path, plain_vcf, args.max_variants,
+                                    add_chr_prefix=add_chr)
         if args.max_variants:
             print(f"  Subsampled to first {n_variants:,} variants", flush=True)
         else:
