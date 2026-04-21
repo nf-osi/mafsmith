@@ -43,10 +43,23 @@
 ## Annotated pipeline
 
 **Mode:** Full pipeline (mafsmith + fastVEP vs. vcf2maf.pl + VEP 115)  
-**Date:** 2026-04-20  
+**Dates:** 2026-04-20 (--vep-forks 4), 2026-04-21 (--vep-forks 16)  
 **mafsmith:** v0.1.0; 1-core (`RAYON_NUM_THREADS=1`, limits both mafsmith and fastVEP to 1 thread) and 16-core (Rayon default, both tools use all 16 cores)  
-**vcf2maf.pl:** `--vep-forks 4` (vcf2maf.pl default); 1 run each  
-**Note:** fastVEP uses Rayon parallelism (16 cores when unset); `--vep-forks 4` gives VEP fewer annotation processes. A 16-fork run (`--vep-forks 16`) is in progress for a symmetric comparison.
+**Iterations:** 1 run each  
+Both fastVEP and VEP 115 use Rayon / fork-based parallelism respectively. Two configurations were tested: VEP `--vep-forks 4` (default deployment) and `--vep-forks 16` (symmetric 16-process comparison).
+
+### Primary: symmetric comparison (--vep-forks 16 vs fastVEP 16-core)
+
+| Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl + VEP (--vep-forks 16) (s) | Speedup (1-core) | Speedup (16-core) |
+|---------|--------|----------|---------------------|----------------------|----------------------------------------|------------------|-------------------|
+| GIAB HG008 | MuTect2 | 277,645 | 25.755 | 11.615 | 459.675 | 17.8× | 39.6× |
+| GIAB HG008 | Strelka2 SNV | 1,562,847 | 93.963 | 30.860 | 2851.569 | 30.3× | 92.4× |
+| GIAB HG008 | Strelka2 INDEL | 293,719 | 25.720 | 11.577 | 613.111 | 23.8× | 53.0× |
+| SEQC2 | MuTect2 | 271,945 | 20.049 | 10.888 | 445.663 | 22.2× | 40.9× |
+| SEQC2 | Strelka | 2,191,720 | 128.527 | 40.961 | 4166.796 | 32.4× | 101.7× |
+| **Mean** | | | | | | **25.3×** | **65.5×** |
+
+### Secondary: typical deployment (--vep-forks 4 vs fastVEP 16-core)
 
 | Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl + VEP (--vep-forks 4) (s) | Speedup (1-core) | Speedup (16-core) |
 |---------|--------|----------|---------------------|----------------------|---------------------------------------|------------------|-------------------|
