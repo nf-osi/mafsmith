@@ -91,6 +91,7 @@ target/release/mafsmith vcf2maf \
 | HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus (ADALL field) | uses `ADALL` (all-dataset allele depths) in addition to `AD` |
 | HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus | same format as HG001 |
 | WGS_FD_1.bwa.somaticSniper.vcf.gz | SEQC2 HCC1395 | SomaticSniper paired T/N | `DP4`+`BCOUNT` FORMAT (no `AD`); samples named TUMOR/NORMAL |
+| HCC1143.dkfz-snvCalling.somatic.snv_mnv.vcf.gz | ICGC PCAWG (DKFZ cell line) | DKFZ SNV caller | GRCh37, `GT:DP:DP4` FORMAT (no `AD`, no `BCOUNT`); samples named CONTROL/TUMOR; no chr prefix |
 
 ## Performance
 
