@@ -62,7 +62,7 @@ target/release/mafsmith vcf2maf \
 
 - **5'UTR vs 5'Flank** (chr1:3857566, chr1:3857574): Transcript selection picks different canonical isoform. Affects ~2 variants per dataset. Under investigation.
 - **3'UTR vs 3'Flank** (e.g. chr1:9729848, chr1:944194, chr1:53087567): mafsmith picks one gene's canonical transcript (3'UTR), vcf2maf picks an adjacent gene's transcript (3'Flank). Root cause is same: different gene/transcript selection at gene-boundary regions. Affects ~1–3 variants per dataset.
-- **Intron vs RNA** (e.g. chr1:817889-818161): When the only protein_coding transcript at a site is non-canonical, `select_transcript_light` falls through to pick an lncRNA canonical transcript. vcf2maf.pl reports `Intron` (protein_coding biotype), mafsmith reports `RNA` (lncRNA biotype). Under investigation.
+- **Intron vs RNA** (chr1:~809967-827588 cluster, and occasionally elsewhere): When the only protein_coding transcript at a site is non-canonical, `select_transcript_light` falls through to pick an lncRNA canonical transcript. vcf2maf.pl reports `Intron` (protein_coding biotype), mafsmith reports `RNA` (lncRNA biotype). The chr1 ~818 kb cluster appears consistently across every dataset tested (CCLE WGS, SEQC2, GIAB HG008 etc.) — typically 5–6 affected variants per 3,000-variant window. Under investigation.
 - **Multi-allelic truncated AD (non-strict mode)**: For records with N ALTs where AD has fewer than N+1 values, vcf2maf.pl outputs `'.'` for ref/alt counts even when the selected ALT's AD index is valid. mafsmith (non-strict) extracts the valid counts. In `--strict` mode mafsmith matches vcf2maf.pl. Affects ~3–5% of GATK paired T/N variants.
 - **Multi-allelic GVCF tie**: when two ALTs have identical depth, tool-specific tie-breaking may differ. Affects ~4 variants in large GVCF files.
 - **SV secondary rows**: mafsmith correctly emits secondary SV breakpoint rows with actual partner chromosome/position. vcf2maf.pl emits them with empty Chromosome (a vcf2maf.pl bug). The `synapse_validate.py` comparison script handles this with best-match selection for key collisions and skips empty-chromosome vcf2maf rows.
@@ -92,6 +92,7 @@ target/release/mafsmith vcf2maf \
 | HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus | same format as HG001 |
 | WGS_FD_1.bwa.somaticSniper.vcf.gz | SEQC2 HCC1395 | SomaticSniper paired T/N | `DP4`+`BCOUNT` FORMAT (no `AD`); samples named TUMOR/NORMAL |
 | HCC1143.dkfz-snvCalling.somatic.snv_mnv.vcf.gz | ICGC PCAWG (DKFZ cell line) | DKFZ SNV caller | GRCh37, `GT:DP:DP4` FORMAT (no `AD`, no `BCOUNT`); samples named CONTROL/TUMOR; no chr prefix |
+| CDS-NMp6b2.vcf.gz, CDS-7nLbDx.vcf.gz, CDS-rBDWH4.vcf.gz (3 of 802) | DepMap CCLE WGS (s3://depmap-omics-ccle) | GATK Mutect2 single-sample | hg38, bcftools-normalized; sample column = cell line name; 802 VCFs total (~163 GB); 0 conversion diffs across 3 samples tested |
 
 ## Performance
 
