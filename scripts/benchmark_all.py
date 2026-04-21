@@ -144,7 +144,8 @@ def mafsmith_cmd(ms: Path, ds: Dataset, ref: Path, out: Path, threads: int,
 
 def vcf2maf_cmd(vcf2maf: Path, ds: Dataset, ref: Path, plain_vcf: Path, out: Path,
                 annotated: bool = False, vep_path: Optional[Path] = None,
-                vep_cache: Optional[Path] = None) -> list:
+                vep_cache: Optional[Path] = None,
+                vep_fork: int = 4) -> list:
     # Prefer the perl co-located with vcf2maf.pl to avoid shebang resolving to system perl.
     colocated_perl = vcf2maf.parent / "perl"
     perl = str(colocated_perl) if colocated_perl.exists() else "perl"
@@ -162,7 +163,8 @@ def vcf2maf_cmd(vcf2maf: Path, ds: Dataset, ref: Path, plain_vcf: Path, out: Pat
         if vep_cache:
             cmd += ["--vep-data", str(vep_cache)]
         # Use offline cache (no internet required) and assembly GRCh38
-        cmd += ["--ncbi-build", "GRCh38", "--cache-version", "115"]
+        cmd += ["--ncbi-build", "GRCh38", "--cache-version", "115",
+                "--vep-forks", str(vep_fork)]
     if ds.vcf_normal_id:
         cmd += ["--normal-id", ds.normal_id, "--vcf-normal-id", ds.vcf_normal_id]
     # Point samtools/tabix to the conda env bin so PATH ordering doesn't matter.
@@ -200,7 +202,8 @@ def run_benchmark(ds: Dataset, ms: Path, vcf2maf: Optional[Path], ref: Path,
                   iterations: int, tmpdir: Path,
                   annotated: bool = False, gff3: Optional[Path] = None,
                   vep_path: Optional[Path] = None,
-                  vep_cache: Optional[Path] = None) -> Result:
+                  vep_cache: Optional[Path] = None,
+                  vep_fork: int = 4) -> Result:
     out_ms  = tmpdir / "ms_out.maf"
     out_vc  = tmpdir / "vc_out.maf"
     plain   = tmpdir / "plain.vcf"
@@ -233,10 +236,15 @@ def run_benchmark(ds: Dataset, ms: Path, vcf2maf: Optional[Path], ref: Path,
     if vcf2maf:
         print(f"  vcf2maf.pl       ({iterations} runs):", end="", flush=True)
         decompress_vcf(ds.vcf, plain)
+        # Remove any VEP output left by a previous dataset's run — VEP exits 25
+        # if its output file already exists and --force_overwrite is not set.
+        for vep_tmp in tmpdir.glob("plain.vep*"):
+            vep_tmp.unlink(missing_ok=True)
+        out_vc.unlink(missing_ok=True)
         for i in range(iterations):
             t = time_cmd(vcf2maf_cmd(vcf2maf, ds, ref, plain, out_vc,
                                      annotated=annotated, vep_path=vep_path,
-                                     vep_cache=vep_cache))
+                                     vep_cache=vep_cache, vep_fork=vep_fork))
             res.vc_times.append(t)
             print(f"  {t:.3f}s", end="", flush=True)
         plain.unlink(missing_ok=True)
@@ -360,6 +368,8 @@ def main():
                    help="Path to VEP binary dir (for annotated mode; auto-detected if absent)")
     p.add_argument("--vep-cache",   type=Path, default=DEFAULT_VEP_CACHE,
                    help=f"Path to VEP cache dir (default: {DEFAULT_VEP_CACHE})")
+    p.add_argument("--vep-fork",    type=int,  default=4,
+                   help="Number of VEP forks for vcf2maf.pl annotated mode [default: 4]")
     args = p.parse_args()
 
     ms = args.mafsmith
@@ -421,6 +431,7 @@ def main():
     if args.annotated:
         print(f" GFF3:        {args.gff3}")
         print(f" VEP cache:   {args.vep_cache}")
+        print(f" VEP forks:   {args.vep_fork}")
     print(f" Output:      {out_path}")
     print("=" * 65)
 
@@ -435,6 +446,7 @@ def main():
                 gff3=args.gff3 if args.annotated else None,
                 vep_path=vep_bin_dir if args.annotated else None,
                 vep_cache=args.vep_cache if args.annotated else None,
+                vep_fork=args.vep_fork if args.annotated else 4,
             )
             results.append(r)
     finally:

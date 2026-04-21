@@ -37,3 +37,43 @@
 - The MuTect2 speedup (32.8–32.9×) is lower than Strelka2/Strelka (36.1–47.3×) because MuTect2 VCFs carry substantially larger INFO fields (TLOD, NLOD, per-allele annotations), making per-line parsing more expensive for both tools — but Perl pays a proportionally higher cost.
 - vcf2maf.pl does not accept gzip-compressed VCF input; files were decompressed to plain text before timing. mafsmith reads gzip natively, so no decompression step is needed in practice — a further practical advantage not reflected in these timings.
 - All timings are means of 3 runs (mafsmith and vcf2maf.pl).
+
+---
+
+## Annotated pipeline
+
+**Mode:** Full pipeline (mafsmith + fastVEP vs. vcf2maf.pl + VEP 115)  
+**Date:** 2026-04-20  
+**mafsmith:** v0.1.0; 1-core (`RAYON_NUM_THREADS=1`, limits both mafsmith and fastVEP to 1 thread) and 16-core (Rayon default, both tools use all 16 cores)  
+**vcf2maf.pl:** `--vep-forks 4` (vcf2maf.pl default); 1 run each  
+**Note:** fastVEP uses Rayon parallelism (16 cores when unset); `--vep-forks 4` gives VEP fewer annotation processes. A 16-fork run (`--vep-forks 16`) is in progress for a symmetric comparison.
+
+| Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl + VEP (--vep-forks 4) (s) | Speedup (1-core) | Speedup (16-core) |
+|---------|--------|----------|---------------------|----------------------|---------------------------------------|------------------|-------------------|
+| GIAB HG008 | MuTect2 | 277,645 | 21.870 | 11.013 | 582.531 | 26.6× | 52.9× |
+| GIAB HG008 | Strelka2 SNV | 1,562,847 | 94.123 | 31.123 | 3591.814 | 38.2× | 115.4× |
+| GIAB HG008 | Strelka2 INDEL | 293,719 | 32.410 | 11.371 | 799.689 | 24.7× | 70.3× |
+| SEQC2 | MuTect2 | 271,945 | 20.383 | 10.474 | 566.607 | 27.8× | 54.1× |
+| SEQC2 | Strelka | 2,191,720 | 128.165 | 41.725 | 5178.114 | 40.4× | 124.1× |
+| **Mean** | | | | | | **31.5×** | **83.4×** |
+
+### fastVEP vs VEP 115 annotation concordance
+
+Compared fastVEP and VEP 115 annotations on 1,000 variants from HG008 MuTect2 (`compare_annotations.py`):
+
+| Field | Mismatches | % |
+|-------|-----------|---|
+| Gene (Ensembl ID) | 256 | 25.6% |
+| Feature (transcript) | 263 | 26.3% |
+| SYMBOL | 182 | 18.2% |
+| BIOTYPE | 205 | 20.5% |
+| Consequence | 124 | 12.4% |
+| STRAND | 162 | 16.2% |
+| HGVSc | 148 | 14.8% |
+| INTRON | 85 | 8.5% |
+| EXON | 8 | 0.8% |
+| HGVSp | 2 | 0.2% |
+| IMPACT | 1 | 0.1% |
+| CANONICAL | 0 | 0.0% |
+
+Root cause: fastVEP's GFF3 (`~/.mafsmith/hg38/genes.gff3`) and VEP 115's indexed cache use different Ensembl gene model releases. Example: chr1:1015828–1015840 — fastVEP selects lncRNA ENSG00000224969 / ENST00000458555 (strand −1); VEP 115 selects protein-coding AGRN ENSG00000188157 / ENST00000379370 (strand +1). No code changes were made; reconciling gene model versions is tracked as a future task.

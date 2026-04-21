@@ -98,7 +98,7 @@ We benchmarked mafsmith against vcf2maf.pl on the conversion step in isolation, 
 
 Even on a single core, mafsmith achieved a mean throughput of 334,802 variants/s — a **47.6-fold speedup** over vcf2maf.pl (range 46.6–48.6×), confirming that the performance advantage is primarily algorithmic rather than a product of parallelism. With all 16 cores, throughput increased to 558,914 variants/s (**79.4-fold speedup**, range 74.3–84.1×), a 1.67× parallel scaling factor. Both speedups were highly consistent across samples (CV 1.3% and 3.9%, respectively).
 
-The practical impact of this speedup scales directly with cohort size. On the same instance type (c6a.4xlarge, $0.612/hr on-demand), the reduction in instance time translates to a cost saving of approximately $0.094 per sample and a reduction of 2.3 g CO₂e per sample (location-based, EPA eGRID 2022 Virginia grid mix; see `results/conversion_benchmark_giab_grch38.md` for full methodology). For a cohort of 10,000 samples this represents approximately $938 in compute cost and 23 kg CO₂e avoided. Full end-to-end pipeline speedup (mafsmith + fastVEP vs. vcf2maf.pl + VEP) will be reported separately.
+The practical impact of this speedup scales directly with cohort size. On the same instance type (c6a.4xlarge, $0.612/hr on-demand), the reduction in instance time translates to a cost saving of approximately $0.094 per sample and a reduction of 2.3 g CO₂e per sample (location-based, EPA eGRID 2022 Virginia grid mix; see `results/conversion_benchmark_giab_grch38.md` for full methodology). For a cohort of 10,000 samples this represents approximately $938 in compute cost and 23 kg CO₂e avoided. The full end-to-end pipeline speedup (mafsmith + fastVEP vs. vcf2maf.pl + VEP 115) across the same five somatic T/N datasets is reported in Table 4; with VEP running at its default fork count of 4, the full pipeline achieved a mean single-core speedup of **31.5×** (range 24.7–40.4×) and a 16-core speedup of **83.4×** (range 52.9–124.1×).
 
 To confirm that speedups generalise to paired tumor/normal somatic VCFs, we benchmarked mafsmith on five additional datasets: MuTect2 and Strelka2 VCFs from the GIAB HG008 somatic benchmark (NYGC pipeline, GRCh38; HG008-T / HG008-N), and MuTect2 and Strelka VCFs from the SEQC2 WGS somatic dataset (HCC1395 / HCC1395BL). All five VCFs carried paired tumor and normal sample columns.
 
@@ -115,11 +115,28 @@ To confirm that speedups generalise to paired tumor/normal somatic VCFs, we benc
 
 mafsmith achieved a mean single-core speedup of **39.1×** (range 32.8–47.3×) and a 16-core speedup of **69.5×** (range 54.4–83.3×) across paired tumor/normal VCFs. The lower bound of the range reflects MuTect2 VCFs, which carry larger per-variant INFO fields (TLOD, NLOD, per-allele annotations) that increase per-line parsing cost for both tools. Note also that vcf2maf.pl does not accept gzip-compressed input and requires decompression before processing; mafsmith reads gzip natively, a further practical advantage not captured in these timings.
 
+To quantify the full annotation pipeline speedup, we re-ran all five datasets with annotation enabled. For vcf2maf.pl, VEP 115 was invoked with `--vep-forks 4` (the default); for mafsmith, fastVEP used all 16 available cores via Rayon (no explicit thread flag; parallelism is automatic).
+
+**Table 4. Full annotated pipeline benchmark: mafsmith + fastVEP vs. vcf2maf.pl + VEP 115 (--vep-forks 4).**
+
+| Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf.pl + VEP (s) | Speedup (1-core) | Speedup (16-core) |
+|---------|--------|----------|---------------------|----------------------|----------------------|------------------|-------------------|
+| GIAB HG008 | MuTect2 | 277,645 | 21.870 | 11.013 | 582.531 | 26.6× | 52.9× |
+| GIAB HG008 | Strelka2 SNV | 1,562,847 | 94.123 | 31.123 | 3591.814 | 38.2× | 115.4× |
+| GIAB HG008 | Strelka2 INDEL | 293,719 | 32.410 | 11.371 | 799.689 | 24.7× | 70.3× |
+| SEQC2 HCC1395 | MuTect2 | 271,945 | 20.383 | 10.474 | 566.607 | 27.8× | 54.1× |
+| SEQC2 HCC1395 | Strelka | 2,191,720 | 128.165 | 41.725 | 5178.114 | 40.4× | 124.1× |
+| **Mean** | | | | | | **31.5×** | **83.4×** |
+
+The full pipeline maintained the same order-of-magnitude advantage as conversion-only, with higher 16-core speedups reflecting fastVEP's more efficient use of all 16 cores compared to VEP's 4-fork process model. The wider speedup range at 16 cores (52.9–124.1×) reflects the interaction between dataset size and annotation parallelism at high core counts.
+
+fastVEP and VEP 115 annotate using the same Ensembl GFF3 format but may use different gene model releases depending on the GFF3 version installed. In a comparison of 1,000 variants from the HG008 MuTect2 VCF, we observed transcript-level discordance between fastVEP (using `~/.mafsmith/hg38/genes.gff3`) and VEP 115 for approximately 26% of variants, arising from canonical transcript assignment differences between gene model versions. Consequence-level agreement was higher (87.6% concordance), with most discordances stemming from different gene model versions rather than algorithmic differences in consequence classification. Reconciling gene model versions between fastVEP and VEP 115 is planned for a future release.
+
 ---
 
 ## Discussion
 
-The primary motivation for mafsmith is throughput: converting thousands of VCFs in large cancer genomics cohorts places substantial demands on compute infrastructure when using vcf2maf.pl, and the per-sample annotation step is a major bottleneck. By combining fastVEP's compiled annotation engine with mafsmith's Rust conversion logic, the full pipeline achieves substantially faster conversion while maintaining field-for-field agreement with the reference implementation. The single-core benchmark (47.6× speedup) confirms that the performance advantage is primarily algorithmic — arising from compiled native code, efficient I/O, and zero-copy parsing — with Rayon parallelism providing an additional 1.67× on top on a 16-core instance.
+The primary motivation for mafsmith is throughput: converting thousands of VCFs in large cancer genomics cohorts places substantial demands on compute infrastructure when using vcf2maf.pl, and the per-sample annotation step is a major bottleneck. By combining fastVEP's compiled annotation engine with mafsmith's Rust conversion logic, the full pipeline achieves substantially faster conversion. The MAF conversion logic (field population, allele assignment, consequence mapping) maintains field-for-field agreement with vcf2maf.pl, while annotation-level concordance with VEP 115 depends on the Ensembl gene model version used by fastVEP. The single-core benchmark (47.6× speedup) confirms that the performance advantage is primarily algorithmic — arising from compiled native code, efficient I/O, and zero-copy parsing — with Rayon parallelism providing an additional 1.67× on top on a 16-core instance.
 
 Achieving full concordance with vcf2maf.pl required careful reverse-engineering of a number of non-obvious behaviours accumulated over years of production use. Key examples include: the treatment of absent normal samples vs. no-call normal GTs in homozygous-alt inference; the VAF-based Allele1 override and its interaction with single-sample vs. paired VCF configurations; the handling of truncated AD arrays from GATK multi-allelic calling; consequence severity ranking for multi-consequence VEP annotations; and the representation of structural variant secondary breakpoint rows.
 
