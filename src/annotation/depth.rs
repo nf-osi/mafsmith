@@ -138,10 +138,15 @@ pub fn extract_depth<F: AsRef<str>>(
         }
     }
 
-    // 6. Ion Torrent: RO (ref obs), AO (alt obs)
+    // 6. Ion Torrent: RO (ref obs), AO (alt obs).
+    // AO is alt-only (no REF entry), so the correct element for a given VCF allele
+    // index is AO[alt_vcf_idx - 1].  Older code always took AO[0] which was wrong
+    // for multi-allelic sites where GT = 0/2, 0/3, etc.
     if let (Some(ro), Some(ao)) = (get("RO"), get("AO")) {
         let ref_count = ro.parse::<u32>().ok();
-        let alt_count = ao.split(',').next().and_then(|v| v.parse().ok());
+        let alt_count = ao.split(',')
+            .nth(alt_vcf_idx.saturating_sub(1))
+            .and_then(|v| v.parse().ok());
         return AlleleDepth {
             ref_count,
             alt_count,

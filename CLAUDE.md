@@ -47,8 +47,22 @@ target/release/mafsmith vcf2maf \
 | 21:46200000 AC>GT | Missense_Mutation | DNP | Dinucleotide polymorphism Variant_Type |
 | 21:46300000 A>G GT=0/1 AD=2,18 | Missense_Mutation | SNP | Het call with VAF=0.9 ≥ 0.7: Tumor_Seq_Allele1 must stay REF. Bug: VAF override fired on explicit GT=0/1; fix: suppress override when GT has both ref (0) and alt (>0) indices |
 
+### Edge case bugs found and fixed via real-VCF comparison
+
+| Bug | Root cause | Fix | Verified on |
+|-----|-----------|-----|-------------|
+| Ion Torrent multi-allelic: `t_alt_count` wrong for GT=0/2 | `AO` is alt-only (no REF entry at index 0). For VCF allele index N, correct AO element is `AO[N-1]`. Code always took `AO[0]`. | `depth.rs` case 6: use `ao.split(',').nth(alt_vcf_idx.saturating_sub(1))` | syn20443868 (147→0 diffs) |
+| `protein_altering_variant` mis-classified as Frame_Shift for in-frame indels with "-" allele | `inframe` computed as `"-".len() - alt.len() = 1 - 9 = 8; 8%3≠0` instead of `0 - 9 = 9; 9%3==0`. Normalized insertions use "-" placeholder (len=1) not empty string (len=0). | `consequence.rs`: treat `"-"` as len=0 in inframe check | syn5614682 (1 diff fixed) |
+| Truncated AD alt-index OOB: `t_ref_count`/`t_alt_count` serialized as `''` instead of `'.'` | For multi-allelic records where AD has fewer values than alts (e.g. AD="0,2" with 3 alleles and effective_alt_vcf_idx=2), alt_count=None was serialized as `''`. vcf2maf.pl outputs `'.'`. | `vcf2maf.rs`: added `tumor_alt_oor`/`normal_alt_oor` flags when AD has real values but alt_vcf_idx is OOB; required `ad_len >= 2` to avoid false-positive on VarScan single-value AD | syn5555584, syn5553158 |
+| VarScan somatic: all depth fields outputting `'.'`, all TSA1 defaulting to REF | Two bugs: (1) `ad_oor` check fired on VarScan's single-value AD (ad_len=1 <= alt_vcf_idx=1), masking VarScan depth extraction. (2) Depth-based hom_alt TSA1 fallback used `ad_vals.get(alt_vcf_idx)` which fails for VarScan's AD[0] = alt_count. | (1) `vcf2maf.rs` `ad_oor`: add `ad_len >= 2` guard. (2) Replace AD-index hom_alt logic with `extract_depth()` call that handles all callers | syn6840402 (933→0 diffs) |
+| Normal sample wrong alt depth for multi-allelic records | `extract_depth` for normal sample always used `alt_vcf_idx=1` (first ALT) regardless of which alt was selected. For GT=1/2 records the normal sample's AD index for the effective alt was never used. | `vcf2maf.rs` line 368: pass `effective_alt` and `effective_alt_vcf_idx` to normal `extract_depth` (same as tumor) | syn5553155 (n_alt_count diffs fixed) |
+
 ### Known remaining differences vs vcf2maf.pl
 
+- **5'UTR vs 5'Flank** (chr1:3857566, chr1:3857574): Transcript selection picks different canonical isoform. Affects ~2 variants per dataset. Under investigation.
+- **3'UTR vs 3'Flank** (e.g. chr1:9729848, chr1:944194, chr1:53087567): mafsmith picks one gene's canonical transcript (3'UTR), vcf2maf picks an adjacent gene's transcript (3'Flank). Root cause is same: different gene/transcript selection at gene-boundary regions. Affects ~1–3 variants per dataset.
+- **Intron vs RNA** (e.g. chr1:817889-818161): When the only protein_coding transcript at a site is non-canonical, `select_transcript_light` falls through to pick an lncRNA canonical transcript. vcf2maf.pl reports `Intron` (protein_coding biotype), mafsmith reports `RNA` (lncRNA biotype). Under investigation.
+- **Multi-allelic truncated AD (non-strict mode)**: For records with N ALTs where AD has fewer than N+1 values, vcf2maf.pl outputs `'.'` for ref/alt counts even when the selected ALT's AD index is valid. mafsmith (non-strict) extracts the valid counts. In `--strict` mode mafsmith matches vcf2maf.pl. Affects ~3–5% of GATK paired T/N variants.
 - **Multi-allelic GVCF tie**: when two ALTs have identical depth, tool-specific tie-breaking may differ. Affects ~4 variants in large GVCF files.
 - **SV secondary rows**: mafsmith correctly emits secondary SV breakpoint rows with actual partner chromosome/position. vcf2maf.pl emits them with empty Chromosome (a vcf2maf.pl bug). The `synapse_validate.py` comparison script handles this with best-match selection for key collisions and skips empty-chromosome vcf2maf rows.
 - **Unrecognized symbolic ALTs**: records with `<INS>`, `<CNV>` or other non-BND/TRA/DEL/DUP/INV symbolic ALTs are dropped (matching vcf2maf.pl behavior).
@@ -57,12 +71,24 @@ target/release/mafsmith vcf2maf \
 
 | Synapse ID | Filename pattern | Caller | VCF type |
 |------------|-----------------|--------|----------|
-| syn31624545 | VA01.vcf.gz | DRAGEN RefCall | single-sample, GT=`./.' or 0/0 |
+| syn31624545 | VA01.vcf.gz | DeepVariant 1.2.0 | single-sample gVCF, GT=`./.' or 0/0 |
 | syn64156972 | Hg38_2_024.mt2.Full.vcf | MuTect2 | single-sample GRCh38 |
 | syn31624535 | FreeBayes_VA01.vcf.gz | FreeBayes | single-sample |
-| syn31624939 | Strelka_VA05_variants.vcf.gz | Strelka2 | paired T/N |
+| syn31624939 | Strelka_VA05_variants.vcf.gz | Strelka2 germline | single-sample variants.vcf (no reference blocks) |
 | syn68172710 | patient*.strelka.somatic_indels.vcf.gz | Strelka2 somatic | paired T/N, indel-only |
 | syn21296193 | somaticSV.vcf.gz | SV caller (Manta/DELLY) | SV-only |
+| syn6840402 | patient_5_*.VarScan_somatic.snp.snpeff.filtered.vcf.gz | VarScan2 somatic | paired T/N, SNP-only |
+| syn6039268 | patient_11_normal_*_patient_11_tumor_*.snpeff.vcf.gz | VarDict paired T/N | paired T/N; `RD` FORMAT field (strand bias) coexists with standard `AD` |
+| syn31624525 | Mutect2_filtered_VA01.vcf.gz | GATK Mutect2 4.x somatic | single-sample, `GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT |
+| syn31624637 | Strelka_VA01_genome.vcf.gz | Strelka2 germline | single-sample genome.vcf, `GT:GQ:GQX:DP:DPF:AD:ADF:ADR:SB:FT:PL` FORMAT |
+| HG008-T--HG008-N.mutect2.vcf.gz | GIAB HG008 somatic | GATK Mutect2 4.2.5 paired T/N | normal listed first, has `FAD` (fragment allele depths) FORMAT field |
+| HG008-T--HG008-N.snv.strelka2.vcf.gz | GIAB HG008 somatic | Strelka2 2.9.3 somatic SNV | per-base allele counts (AU/CU/GU/TU), no AD field |
+| HG008-T--HG008-N.indel.strelka2.vcf.gz | GIAB HG008 somatic | Strelka2 2.9.3 somatic indel | TIR/TAR allele count format, no AD field |
+| WGS_FD_1.bwa.muTect2.vcf.gz | SEQC2 HCC1395 | GATK Mutect2 paired T/N | samples named TUMOR/NORMAL |
+| WGS_FD_1.bwa.strelka.vcf.gz | SEQC2 HCC1395 | Strelka2 somatic | normal listed first, samples named NORMAL/TUMOR |
+| VA02.vcf.gz, VA06.vcf.gz | SMMART DeepVariant | DeepVariant 1.2.0 | single-sample gVCF with `VAF` FORMAT field (absent in VA01); GT=`./.' or 0/0 |
+| HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus (ADALL field) | uses `ADALL` (all-dataset allele depths) in addition to `AD` |
+| HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz | GIAB germline benchmark | Multi-caller consensus | same format as HG001 |
 
 ## Performance
 

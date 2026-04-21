@@ -331,6 +331,8 @@ def main():
     p.add_argument("--vep-cache",    type=Path, default=VEP_CACHE)
     p.add_argument("--vep-forks",    type=int,  default=16,
                    help="VEP forks for both mafsmith and vcf2maf.pl [default: 16]")
+    p.add_argument("--strict",        action="store_true",
+                   help="Pass --strict to mafsmith (match vcf2maf.pl AD-count behavior)")
     p.add_argument("--no-vcf2maf",   action="store_true",
                    help="Skip vcf2maf.pl — run mafsmith only (no diff produced)")
     p.add_argument("--keep-work",    action="store_true",
@@ -373,8 +375,17 @@ def main():
         samples, has_chr = read_vcf_header(vcf_path)
         print(f"VCF samples: {samples}  chr-prefix: {has_chr}", flush=True)
 
-        vcf_tumor_id  = args.vcf_tumor_id  or (samples[0] if samples else "TUMOR")
-        vcf_normal_id = args.vcf_normal_id or (samples[1] if len(samples) > 1 else "")
+        # Auto-detect tumor/normal order: if first sample looks like normal (name contains
+        # "normal" or "germline") and second looks like tumor, swap them.
+        if not args.vcf_tumor_id and len(samples) >= 2:
+            s0, s1 = samples[0].lower(), samples[1].lower()
+            is_normal_first = any(w in s0 for w in ("normal", "germline")) and any(w in s1 for w in ("tumor", "somatic"))
+            detected_tumor, detected_normal = (samples[1], samples[0]) if is_normal_first else (samples[0], samples[1])
+        else:
+            detected_tumor  = samples[0] if samples else "TUMOR"
+            detected_normal = samples[1] if len(samples) > 1 else ""
+        vcf_tumor_id  = args.vcf_tumor_id  or detected_tumor
+        vcf_normal_id = args.vcf_normal_id or detected_normal
         tumor_id  = args.tumor_id  or vcf_tumor_id
         normal_id = args.normal_id or vcf_normal_id
 
@@ -425,6 +436,8 @@ def main():
             ms_cmd += ["--vcf-normal-id", vcf_normal_id, "--normal-id", normal_id]
         if vep:
             ms_cmd += ["--vep-path", str(vep)]
+        if args.strict:
+            ms_cmd += ["--strict"]
         run(ms_cmd, label="mafsmith")
         print(f"  → {ms_maf}", flush=True)
 
@@ -467,7 +480,7 @@ def main():
             diff = compare_mafs(ms_rows, vc_rows)
 
             run_desc = (
-                f"mafsmith+VEP vs vcf2maf.pl+VEP (--vep-forks {args.vep_forks})"
+                f"mafsmith{'(--strict)' if args.strict else ''}+VEP vs vcf2maf.pl+VEP (--vep-forks {args.vep_forks})"
                 + (f"; max-variants {args.max_variants:,}" if args.max_variants else "")
             )
             write_diff_report(diff, diff_path, input_label,

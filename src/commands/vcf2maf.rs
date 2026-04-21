@@ -365,7 +365,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         let tumor_depth = tumor_vals.as_deref()
             .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
         let normal_depth = normal_vals.as_deref()
-            .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &rec.alt_allele, 1));
+            .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
 
         let var_class =
             so_to_variant_classification(&transcript.consequences, &norm.ref_allele, &norm.alt_allele);
@@ -403,7 +403,8 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         };
 
         let fmt_depth = |d: Option<u32>, truncated: bool| -> String {
-            if truncated { ".".to_owned() } else { d.map(|v| v.to_string()).unwrap_or_default() }
+            if truncated { ".".to_owned() }
+            else { d.map(|v| v.to_string()).unwrap_or_default() }
         };
         let fmt_normal_depth = |d: Option<u32>, truncated: bool| -> String {
             if normal_col.is_none() { String::new() }
@@ -413,12 +414,16 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
         // n_expected_ad: AD needs exactly REF + all ALTs entries for a complete read.
         let n_expected_ad = 1 + rec.all_alts.len();
-        // strict mode: when AD has fewer values than expected, suppress depth-based allele
+        // VarScan uses a single-value AD (alt count only, paired with RD for ref count).
+        // Treat that as a different convention — don't apply the n_expected_ad strict check to it.
+        let is_varscan_fmt = rec.format_keys.iter().any(|k| k == "RD");
+        // strict mode: when AD has real values but fewer than expected, suppress depth-based allele
         // calling and report '.' for depth fields — matching vcf2maf.pl behavior.
-        let tumor_ad_truncated = args.strict && tumor_vals.as_deref()
+        // Guard: ad_str != "." (missing call — those correctly serialize as '').
+        let tumor_ad_truncated = args.strict && !is_varscan_fmt && tumor_vals.as_deref()
             .and_then(|vals| rec.format_keys.iter().position(|k| k == "AD")
                 .and_then(|ai| vals.get(ai)))
-            .map(|ad_str| ad_str.split(',').count() < n_expected_ad)
+            .map(|ad_str| *ad_str != "." && ad_str.split(',').count() < n_expected_ad)
             .unwrap_or(false);
 
         // Tumor_Seq_Allele1: sort GT allele indices and use the smallest, matching vcf2maf.
@@ -476,19 +481,15 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     let hom_alt = if tumor_ad_truncated {
                         false
                     } else {
-                        (|| -> Option<bool> {
-                            let ad_idx = rec.format_keys.iter().position(|k| k == "AD")?;
-                            let ad_vals: Vec<u32> = vals.get(ad_idx)?
-                                .split(',').filter_map(|v| v.parse().ok()).collect();
-                            let var_depth = *ad_vals.get(effective_alt_vcf_idx)?;
-                            if var_depth == 0 { return Some(false); }
-                            let dp = rec.format_keys.iter().position(|k| k == "DP")
-                                .and_then(|i| vals.get(i))
-                                .and_then(|v| v.parse::<u32>().ok())
-                                .unwrap_or_else(|| ad_vals.iter().sum());
-                            if dp == 0 { return None; }
-                            Some(var_depth as f64 / dp as f64 >= 0.7)
-                        })().unwrap_or(false)
+                        // Use extract_depth (handles all callers: GATK, VarScan, Strelka, etc.)
+                        // instead of re-parsing AD by index, which fails for VarScan's
+                        // single-value AD field (alt count only, not ref,alt array).
+                        let ad = extract_depth(rec.format_keys.as_slice(), vals,
+                            &rec.ref_allele, &effective_alt, effective_alt_vcf_idx);
+                        match (ad.alt_count, ad.depth()) {
+                            (Some(alt), Some(total)) if total > 0 => alt as f64 / total as f64 >= 0.7,
+                            _ => false,
+                        }
                     };
                     return Some(if hom_alt { norm.alt_allele.clone() } else { norm.ref_allele.clone() });
                 }
@@ -563,11 +564,28 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             tumor_seq_allele1
         };
 
-        let normal_ad_truncated = args.strict && normal_vals.as_deref()
+        let normal_ad_truncated = args.strict && !is_varscan_fmt && normal_vals.as_deref()
             .and_then(|vals| rec.format_keys.iter().position(|k| k == "AD")
                 .and_then(|ai| vals.get(ai)))
-            .map(|ad_str| ad_str.split(',').count() < n_expected_ad)
+            .map(|ad_str| *ad_str != "." && ad_str.split(',').count() < n_expected_ad)
             .unwrap_or(false);
+
+        // When AD has real values but alt_vcf_idx is out of bounds (truncated multi-allelic AD),
+        // output '.' for ref/alt counts (matching vcf2maf.pl), but keep t_depth from DP.
+        let ad_oor = |opt_vals: Option<&[&str]>| -> bool {
+            opt_vals
+                .and_then(|vals| rec.format_keys.iter().position(|k| k == "AD")
+                    .and_then(|ai| vals.get(ai).copied()))
+                .map(|ad_str| {
+                    let ad_len = ad_str.split(',').count();
+                    // Only applies to standard ref,alt[,...] AD arrays (≥2 entries).
+                    // VarScan uses a single-value AD (alt count only) — skip those.
+                    ad_str != "." && ad_len >= 2 && ad_len <= effective_alt_vcf_idx
+                })
+                .unwrap_or(false)
+        };
+        let tumor_alt_oor  = ad_oor(tumor_vals.as_deref());
+        let normal_alt_oor = ad_oor(normal_vals.as_deref());
 
         let mut extra = indexmap::IndexMap::new();
         for field in &args.retain_ann {
@@ -641,12 +659,14 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             hgvsp_short,
             transcript_id: transcript.feature.clone(),
             exon_number: transcript.exon.clone(),
-            t_depth: fmt_depth(tumor_depth.as_ref().and_then(|d| d.depth()), tumor_ad_truncated),
-            t_ref_count: fmt_depth(tumor_depth.as_ref().and_then(|d| d.ref_count), tumor_ad_truncated),
-            t_alt_count: fmt_depth(tumor_depth.as_ref().and_then(|d| d.alt_count), tumor_ad_truncated),
-            n_depth: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.depth()), normal_ad_truncated),
-            n_ref_count: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.ref_count), normal_ad_truncated),
-            n_alt_count: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.alt_count), normal_ad_truncated),
+            // t_depth/n_depth: always report total depth (from DP) — not affected by AD truncation.
+            // vcf2maf.pl suppresses only ref/alt counts when AD is truncated, not total depth.
+            t_depth: fmt_depth(tumor_depth.as_ref().and_then(|d| d.depth()), false),
+            t_ref_count: fmt_depth(tumor_depth.as_ref().and_then(|d| d.ref_count), tumor_ad_truncated || tumor_alt_oor),
+            t_alt_count: fmt_depth(tumor_depth.as_ref().and_then(|d| d.alt_count), tumor_ad_truncated || tumor_alt_oor),
+            n_depth: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.depth()), false),
+            n_ref_count: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.ref_count), normal_ad_truncated || normal_alt_oor),
+            n_alt_count: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.alt_count), normal_ad_truncated || normal_alt_oor),
             all_effects,
             vep_allele: transcript.allele.clone(),
             vep_gene: transcript.gene.clone(),

@@ -8,9 +8,10 @@ pub fn so_to_variant_classification<S: AsRef<str>>(
     ref_allele: &str,
     alt_allele: &str,
 ) -> &'static str {
+    // Treat "-" (normalized empty allele) as length 0 so abs_diff gives the actual indel length.
     let inframe = {
-        let r = ref_allele.len();
-        let a = alt_allele.len();
+        let r = if ref_allele == "-" { 0 } else { ref_allele.len() };
+        let a = if alt_allele == "-" { 0 } else { alt_allele.len() };
         r != a && (r.abs_diff(a)) % 3 == 0
     };
     // Sort consequences by severity so the most impactful term is classified first.
@@ -243,6 +244,29 @@ mod tests {
         assert_eq!(
             so_to_variant_classification(&["some_unknown_variant"], "A", "T"),
             "Targeted_Region"
+        );
+    }
+
+    #[test]
+    fn protein_altering_9bp_ins_is_inframe_not_frameshift() {
+        // 9-bp insertion using normalized "-" allele: abs_diff must treat "-" as len 0.
+        // Bug: "-".len() == 1, so abs_diff(1,9)=8, 8%3≠0 → wrongly gave Frame_Shift_Ins.
+        assert_eq!(
+            so_to_variant_classification(&["protein_altering_variant"], "-", "GGGGCGGGC"),
+            "In_Frame_Ins"
+        );
+        assert_eq!(
+            so_to_variant_classification(&["protein_altering_variant"], "GGGGCGGGC", "-"),
+            "In_Frame_Del"
+        );
+    }
+
+    #[test]
+    fn protein_altering_8bp_ins_is_frameshift() {
+        // 8-bp insertion: 8%3≠0 → Frame_Shift_Ins.
+        assert_eq!(
+            so_to_variant_classification(&["protein_altering_variant"], "-", "GGGGCGGG"),
+            "Frame_Shift_Ins"
         );
     }
 }
