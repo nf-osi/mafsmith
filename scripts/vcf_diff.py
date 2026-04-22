@@ -222,8 +222,11 @@ def variant_key(row):
 # Comparison logic
 # ---------------------------------------------------------------------------
 
-def compare_mafs(ms_rows, vc_rows):
-    """Return a structured diff dict comparing only CONVERSION_FIELDS."""
+def compare_mafs(ms_rows, vc_rows, cmp_fields=None):
+    """Return a structured diff dict comparing only cmp_fields (default: CONVERSION_FIELDS)."""
+    if cmp_fields is None:
+        cmp_fields = CONVERSION_FIELDS
+
     ms_idx = defaultdict(list)
     for r in ms_rows:
         if r.get("Chromosome"):
@@ -252,11 +255,11 @@ def compare_mafs(ms_rows, vc_rows):
         else:
             # Pick the candidate with fewest conversion-field differences.
             ms_row = min(ms_candidates, key=lambda r: sum(
-                1 for c in CONVERSION_FIELDS if r.get(c, "") != vc_row.get(c, "")
+                1 for c in cmp_fields if r.get(c, "") != vc_row.get(c, "")
             ))
 
         diffs = []
-        for col in sorted(CONVERSION_FIELDS):
+        for col in sorted(cmp_fields):
             ms_val = ms_row.get(col, "")
             vc_val = vc_row.get(col, "")
             if ms_val != vc_val:
@@ -286,7 +289,9 @@ def compare_mafs(ms_rows, vc_rows):
 # Report writer
 # ---------------------------------------------------------------------------
 
-def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc):
+def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc, cmp_fields=None):
+    if cmp_fields is None:
+        cmp_fields = CONVERSION_FIELDS
     SEP  = "=" * 72
     SEP2 = "-" * 72
 
@@ -297,7 +302,7 @@ def write_diff_report(diff, path, input_label, tumor_id, normal_id, run_desc):
         f" Input:    {input_label}",
         f" Run:      {run_desc}",
         f" Tumor:    {tumor_id}" + (f"   Normal: {normal_id}" if normal_id else ""),
-        f" Compared: {', '.join(sorted(CONVERSION_FIELDS))}",
+        f" Compared: {', '.join(sorted(cmp_fields))}",
         SEP, "",
     ]
 
@@ -410,6 +415,9 @@ def main():
                    help="VEP forks for both mafsmith and vcf2maf.pl [default: 16]")
     p.add_argument("--strict",        action="store_true",
                    help="Pass --strict to mafsmith (match vcf2maf.pl AD-count behavior)")
+    p.add_argument("--inhibit-vep",  action="store_true",
+                   help="Skip VEP annotation (mafsmith --skip-annotation / vcf2maf.pl --inhibit-vep); "
+                        "Variant_Classification is excluded from the diff")
     p.add_argument("--no-vcf2maf",   action="store_true",
                    help="Skip vcf2maf.pl — run mafsmith only (no diff produced)")
     p.add_argument("--keep-work",    action="store_true",
@@ -430,7 +438,7 @@ def main():
     vcf2maf = None if args.no_vcf2maf else find_tool("vcf2maf.pl")
     if not args.no_vcf2maf and not vcf2maf:
         sys.exit("ERROR: vcf2maf.pl not found. Install via conda or pass --no-vcf2maf.")
-    vep = None if args.no_vcf2maf else find_tool("vep")
+    vep = None if (args.no_vcf2maf or args.inhibit_vep) else find_tool("vep")
 
     # Resolve input
     input_label = args.input
@@ -507,24 +515,39 @@ def main():
 
         ncbi_build = NCBI_BUILD_BY_GENOME.get(args.genome, "GRCh38")
 
-        # --- mafsmith + VEP ---
-        print(f"\nRunning mafsmith + VEP (--vep-forks {args.vep_forks})...", flush=True)
-        ms_cmd = [
-            str(args.mafsmith), "vcf2maf",
-            "-i", str(plain_vcf),
-            "-o", str(ms_maf),
-            "--vcf-tumor-id", vcf_tumor_id,
-            "--tumor-id",     tumor_id,
-            "--genome", args.genome,
-            "--annotator", "vep",
-            "--vep-data",  str(args.vep_cache),
-            "--vep-forks", str(args.vep_forks),
-        ]
+        # Fields excluded in --inhibit-vep mode because they depend on annotation.
+        cmp_fields = CONVERSION_FIELDS - {"Variant_Classification"} if args.inhibit_vep else CONVERSION_FIELDS
+
+        # --- mafsmith ---
+        if args.inhibit_vep:
+            print(f"\nRunning mafsmith --skip-annotation...", flush=True)
+            ms_cmd = [
+                str(args.mafsmith), "vcf2maf",
+                "-i", str(plain_vcf),
+                "-o", str(ms_maf),
+                "--vcf-tumor-id", vcf_tumor_id,
+                "--tumor-id",     tumor_id,
+                "--genome", args.genome,
+                "--skip-annotation",
+            ]
+        else:
+            print(f"\nRunning mafsmith + VEP (--vep-forks {args.vep_forks})...", flush=True)
+            ms_cmd = [
+                str(args.mafsmith), "vcf2maf",
+                "-i", str(plain_vcf),
+                "-o", str(ms_maf),
+                "--vcf-tumor-id", vcf_tumor_id,
+                "--tumor-id",     tumor_id,
+                "--genome", args.genome,
+                "--annotator", "vep",
+                "--vep-data",  str(args.vep_cache),
+                "--vep-forks", str(args.vep_forks),
+            ]
         if args.ref_fasta:
             ms_cmd += ["--ref-fasta", str(args.ref_fasta)]
         if normal_id:
             ms_cmd += ["--vcf-normal-id", vcf_normal_id, "--normal-id", normal_id]
-        if vep:
+        if not args.inhibit_vep and vep:
             ms_cmd += ["--vep-path", str(vep)]
         if args.strict:
             ms_cmd += ["--strict"]
@@ -532,29 +555,40 @@ def main():
         print(f"  → {ms_maf}", flush=True)
 
         if not args.no_vcf2maf and vcf2maf:
-            # --- vcf2maf.pl + VEP ---
-            print(f"\nRunning vcf2maf.pl + VEP 115 (--vep-forks {args.vep_forks})...",
-                  flush=True)
-
+            # --- vcf2maf.pl ---
             colocated_perl = vcf2maf.parent / "perl"
             perl = str(colocated_perl) if colocated_perl.exists() else "perl"
 
-            vc_cmd = [
-                perl, str(vcf2maf),
-                "--input-vcf",     str(plain_vcf),
-                "--output-maf",    str(vc_maf),
-                "--tumor-id",      tumor_id,
-                "--vcf-tumor-id",  vcf_tumor_id,
-                "--ncbi-build",    ncbi_build,
-                "--cache-version", "115",
-                "--vep-forks",     str(args.vep_forks),
-                "--vep-data",      str(args.vep_cache),
-            ]
+            if args.inhibit_vep:
+                print(f"\nRunning vcf2maf.pl --inhibit-vep...", flush=True)
+                vc_cmd = [
+                    perl, str(vcf2maf),
+                    "--input-vcf",    str(plain_vcf),
+                    "--output-maf",   str(vc_maf),
+                    "--tumor-id",     tumor_id,
+                    "--vcf-tumor-id", vcf_tumor_id,
+                    "--ncbi-build",   ncbi_build,
+                    "--inhibit-vep",
+                ]
+            else:
+                print(f"\nRunning vcf2maf.pl + VEP 115 (--vep-forks {args.vep_forks})...",
+                      flush=True)
+                vc_cmd = [
+                    perl, str(vcf2maf),
+                    "--input-vcf",     str(plain_vcf),
+                    "--output-maf",    str(vc_maf),
+                    "--tumor-id",      tumor_id,
+                    "--vcf-tumor-id",  vcf_tumor_id,
+                    "--ncbi-build",    ncbi_build,
+                    "--cache-version", "115",
+                    "--vep-forks",     str(args.vep_forks),
+                    "--vep-data",      str(args.vep_cache),
+                ]
             if args.ref_fasta:
                 vc_cmd += ["--ref-fasta", str(args.ref_fasta)]
             if normal_id:
                 vc_cmd += ["--normal-id", normal_id, "--vcf-normal-id", vcf_normal_id]
-            if vep:
+            if not args.inhibit_vep and vep:
                 vc_cmd += ["--vep-path", str(vep.parent)]
             # Point samtools/tabix at the conda env so PATH order doesn't matter.
             for tool in ("samtools", "tabix"):
@@ -568,15 +602,16 @@ def main():
             print("\nComparing MAFs...", flush=True)
             ms_rows = read_maf(str(ms_maf))
             vc_rows = read_maf(str(vc_maf))
-            diff = compare_mafs(ms_rows, vc_rows)
+            diff = compare_mafs(ms_rows, vc_rows, cmp_fields=cmp_fields)
 
+            mode_tag = "--inhibit-vep" if args.inhibit_vep else f"+VEP ({ncbi_build}, --vep-forks {args.vep_forks})"
+            strict_tag = "(--strict)" if args.strict else ""
             run_desc = (
-                f"mafsmith{'(--strict)' if args.strict else ''}+VEP vs vcf2maf.pl+VEP"
-                f" ({ncbi_build}, --vep-forks {args.vep_forks})"
+                f"mafsmith{strict_tag} vs vcf2maf.pl {mode_tag}"
                 + (f"; max-variants {args.max_variants:,}" if args.max_variants else "")
             )
             write_diff_report(diff, diff_path, input_label,
-                              tumor_id, normal_id, run_desc)
+                              tumor_id, normal_id, run_desc, cmp_fields=cmp_fields)
 
             n_diffs = len(diff["diffs_by_variant"])
 
