@@ -37,8 +37,8 @@ MAFSMITH  = REPO / "target" / "release" / "mafsmith"
 VEP_CACHE = Path.home() / ".vep"
 
 REF_FASTA_BY_GENOME = {
-    "grch38": Path.home() / ".vep" / "homo_sapiens" / "112_GRCh38" / "Homo_sapiens.GRCh38.dna.toplevel.chr.fa.gz",
-    "grch37": Path.home() / ".vep" / "homo_sapiens" / "112_GRCh37" / "Homo_sapiens.GRCh37.dna.toplevel.fa.gz",
+    "grch38": Path.home() / ".mafsmith" / "GRCh38" / "reference.fa",
+    "grch37": Path.home() / ".mafsmith" / "GRCh37" / "reference.fa",
     "grcm39": Path.home() / ".mafsmith" / "grcm39" / "reference.fa",
 }
 NCBI_BUILD_BY_GENOME = {

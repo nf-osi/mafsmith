@@ -48,8 +48,7 @@ run_grch38() {
         --no-keep-mafs \
         --mafsmith "$MAFSMITH" \
         "${extra_args[@]}" \
-        > "${outdir}/run.log" 2>&1
-    rc=$?
+        > "${outdir}/run.log" 2>&1 && rc=0 || rc=$?
 
     diffs=$(grep -oP "CONVERSION DIFFERENCES \(\K[0-9]+" "${outdir}/diff.txt" 2>/dev/null || echo "?")
     if [ $rc -ne 0 ]; then
@@ -81,8 +80,7 @@ run_grch37() {
         --no-keep-mafs \
         --mafsmith "$MAFSMITH" \
         "${extra_args[@]}" \
-        > "${outdir}/run.log" 2>&1
-    rc=$?
+        > "${outdir}/run.log" 2>&1 && rc=0 || rc=$?
 
     diffs=$(grep -oP "CONVERSION DIFFERENCES \(\K[0-9]+" "${outdir}/diff.txt" 2>/dev/null || echo "?")
     if [ $rc -ne 0 ]; then
