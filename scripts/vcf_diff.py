@@ -103,7 +103,8 @@ def read_vcf_header(path):
     return samples, bool(has_chr)
 
 
-def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False, seed=42):
+def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False, seed=42,
+                   skip_ref_blocks=False):
     """Write a plain-text VCF to dst, optionally reservoir-sampling max_variants.
 
     When max_variants is set, uses Knuth reservoir sampling (Algorithm R) so
@@ -113,9 +114,21 @@ def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False, seed=42):
 
     add_chr_prefix: prepend 'chr' to chromosome names in data lines and
     ##contig headers (for VCFs using Ensembl-style names without prefix).
+
+    skip_ref_blocks: drop GVCF reference-block records (ALT is '.' or a
+    symbolic allele like '<NON_REF>'/'<*>') before passing to tools.
+    Use for all-sites genome.vcf files where reference blocks vastly
+    outnumber actual variants.
     """
     import random
     opener = gzip.open if str(src).endswith((".gz", ".bgz")) else open
+
+    def _is_ref_block(line):
+        parts = line.split("\t", 5)
+        if len(parts) < 5:
+            return False
+        alt = parts[4]
+        return alt == "." or alt.startswith("<")
 
     def _fix(line):
         if add_chr_prefix:
@@ -147,6 +160,8 @@ def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False, seed=42):
                         line = line.replace("##contig=<ID=", "##contig=<ID=chr", 1)
                     fout.write(line)
                 else:
+                    if skip_ref_blocks and _is_ref_block(line):
+                        continue
                     fout.write(_fix(line))
                     n += 1
         return n
@@ -161,6 +176,8 @@ def decompress_vcf(src, dst, max_variants=None, add_chr_prefix=False, seed=42):
                     line = line.replace("##contig=<ID=", "##contig=<ID=chr", 1)
                 header_lines.append(line)
             else:
+                if skip_ref_blocks and _is_ref_block(line):
+                    continue
                 data = _fix(line)
                 n_total += 1
                 if len(reservoir) < max_variants:
@@ -534,6 +551,10 @@ def main():
                    help="Skip vcf2maf.pl — run mafsmith only (no diff produced)")
     p.add_argument("--no-keep-mafs", action="store_true",
                    help="Delete MAF files after writing diff.txt (saves disk space in batch runs)")
+    p.add_argument("--skip-ref-blocks", action="store_true",
+                   help="Drop GVCF reference-block records (ALT='.' or symbolic <...>) before "
+                        "running tools. Use for all-sites genome.vcf files to avoid processing "
+                        "the ~95%% of records that are non-variant reference blocks.")
     p.add_argument("--keep-work",    action="store_true",
                    help="Keep temp working directory after finishing")
     p.add_argument("--work-dir",     type=Path, default=None,
@@ -627,9 +648,12 @@ def main():
 
         print(f"\nPreparing plain VCF...", flush=True)
         n_variants = decompress_vcf(vcf_path, plain_vcf, args.max_variants,
-                                    add_chr_prefix=add_chr)
+                                    add_chr_prefix=add_chr,
+                                    skip_ref_blocks=args.skip_ref_blocks)
         if args.max_variants:
             print(f"  Reservoir-sampled {n_variants:,} variants (genome-wide)", flush=True)
+        elif args.skip_ref_blocks:
+            print(f"  {n_variants:,} variants (reference blocks excluded)", flush=True)
         else:
             print(f"  {n_variants:,} variants", flush=True)
 

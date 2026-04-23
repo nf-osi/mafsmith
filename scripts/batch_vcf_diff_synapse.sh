@@ -57,8 +57,9 @@ datasets=(
     # Strelka2 germline variants.vcf (VA05)
     "syn31624939|strelka2_germline_variants_VA05|"
 
-    # Strelka2 germline genome.vcf (VA01) — 267M variants (2 GB); sample 20k to avoid OOM
-    "syn31624637|strelka2_germline_genome_VA01|--sample 20000"
+    # Strelka2 germline genome.vcf (VA01) — 267M records but ~98% are reference blocks;
+    # --skip-ref-blocks filters them out so only actual variants reach vcf2maf/mafsmith.
+    "syn31624637|strelka2_germline_genome_VA01|--skip-ref-blocks"
 
     # Strelka2 somatic indels — paired T/N, Strelka2 uses TUMOR/NORMAL columns
     "syn68172710|strelka2_somatic_indels|"
