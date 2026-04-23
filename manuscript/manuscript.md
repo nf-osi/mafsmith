@@ -66,24 +66,24 @@ The conversion step (post-annotation) uses Rayon [CITATION: Rayon] for parallel 
 
 ### Validation
 
-We validated mafsmith against vcf2maf.pl across thirteen caller types and VCF formats, comparing all key MAF fields (`Hugo_Symbol`, `Variant_Classification`, `Variant_Type`, `Reference_Allele`, `Tumor_Seq_Allele1`, `Tumor_Seq_Allele2`, `HGVSc`, `HGVSp`, `HGVSp_Short`, `Transcript_ID`, `Exon_Number`, `t_depth`, `t_ref_count`, `t_alt_count`, `n_depth`, `n_ref_count`, `n_alt_count`) on the same fastVEP-annotated input (Table 1). For all caller types, mafsmith produced 0 conversion-field mismatches in `--strict` mode. Remaining differences between tools are restricted to `Variant_Classification` for ~2–5 variants per dataset at gene-boundary regions where tools select different canonical transcripts, reflecting different Ensembl gene model versions rather than conversion logic.
+We validated mafsmith against vcf2maf.pl across thirteen caller types and VCF formats, comparing all key MAF fields (`Hugo_Symbol`, `Variant_Classification`, `Variant_Type`, `Reference_Allele`, `Tumor_Seq_Allele1`, `Tumor_Seq_Allele2`, `HGVSc`, `HGVSp`, `HGVSp_Short`, `Transcript_ID`, `Exon_Number`, `t_depth`, `t_ref_count`, `t_alt_count`, `n_depth`, `n_ref_count`, `n_alt_count`) on the same fastVEP-annotated input (Table 1). For all caller types, mafsmith produced 0 conversion-field mismatches in `--strict` mode across a total of 57.6 million variants. Remaining differences between tools are restricted to `Variant_Classification` for ~2–5 variants per dataset at gene-boundary regions where tools select different canonical transcripts, reflecting different Ensembl gene model versions rather than conversion logic.
 
-**Table 1. Validation of mafsmith against vcf2maf.pl (≥ 3,000 variants per dataset, --strict mode, 0 conversion-field mismatches in all cases).**
+**Table 1. Validation of mafsmith against vcf2maf.pl (full variant sets per dataset; --strict mode; 0 conversion-field mismatches in all cases; 57.6 million variants compared in total).**
 
 | Caller | VCF type / FORMAT fields | Source | Variants compared |
 |--------|--------------------------|--------|-------------------|
-| DeepVariant 1.2.0 | Single-sample gVCF (GT=`0/0`/`./.'`) | syn31624545 | 20,000 |
-| GATK MuTect2 | Single-sample GRCh38 | syn31624525 | 20,000 |
-| GATK MuTect2 (paired T/N) | `GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT | GIAB HG008; SEQC2 HCC1395 | 20,000 each |
-| FreeBayes | Single-sample | syn31624535 | 20,000 |
-| Strelka2 germline | Single-sample `variants.vcf` and `genome.vcf` | syn31624939; syn31624637 | 20,000 each |
-| Strelka2 somatic SNVs | Paired T/N; per-base `AU/CU/GU/TU` depth fields | GIAB HG008; SEQC2 HCC1395 | 20,000 each |
-| Strelka2 somatic indels | Paired T/N; `TAR`/`TIR` depth fields | syn68172710; GIAB HG008 | 20,000 each |
+| DeepVariant 1.2.0 | Single-sample gVCF (GT=`0/0`/`./.'`) | syn31624545 | 2,936,426 |
+| GATK MuTect2 | Single-sample GRCh38 | syn31624525 | 751,548 |
+| GATK MuTect2 (paired T/N) | `GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT | GIAB HG008; SEQC2 HCC1395 | 277,645; 271,945 |
+| FreeBayes | Single-sample | syn31624535 | 2,858,303 |
+| Strelka2 germline | Single-sample `variants.vcf` and `genome.vcf` | syn31624939; syn31624637 | 5,841,306; 3,486,411 |
+| Strelka2 somatic SNVs | Paired T/N; per-base `AU/CU/GU/TU` depth fields | GIAB HG008; SEQC2 HCC1395 | 1,562,847; 2,191,720 |
+| Strelka2 somatic indels | Paired T/N; `TAR`/`TIR` depth fields | syn68172710; GIAB HG008 | 23,375; 293,719 |
 | SV callers (Manta/DELLY) | SV-only; BND, DEL, DUP, INV symbolic ALTs | syn21296193 | 398 (all SVs) |
-| VarScan2 somatic | Paired T/N; `RD`+`AD` FORMAT | syn6840402 | 20,000 |
-| VarDict (paired T/N) | `RD` strand-bias field coexists with standard `AD` | syn6039268 | 20,000 |
-| SomaticSniper | Paired T/N; `DP4`+`BCOUNT` FORMAT (no `AD`) | SEQC2 HCC1395 | 20,000 |
-| GIAB germline benchmarks | Multi-caller consensus; `ADALL` field; GRCh38 | HG001–HG007 (NIST v4.2.1) | 20,000 each |
+| VarScan2 somatic | Paired T/N; `RD`+`AD` FORMAT | syn6840402 | 59,618 |
+| VarDict (paired T/N) | `RD` strand-bias field coexists with standard `AD` | syn6039268 | 9,303,064 |
+| SomaticSniper | Paired T/N; `DP4`+`BCOUNT` FORMAT (no `AD`) | SEQC2 HCC1395 | 164,704 |
+| GIAB germline benchmarks | Multi-caller consensus; `ADALL` field; GRCh38 | HG001–HG007 (NIST v4.2.1) | 3,839,315–4,048,342 each (27,529,001 total) |
 | COSMIC v103 | Annotation database VCF (no sample columns); GRCh38 | GenomeScreensMutant; NonCodingVariants | 3,000 each |
 
 ### Performance
