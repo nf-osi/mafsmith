@@ -39,8 +39,16 @@ pub fn normalize(vcf_pos: u64, ref_allele: &str, alt_allele: &str) -> Normalized
 
     Normalized {
         pos,
-        ref_allele: if ref_str.is_empty() { "-".to_owned() } else { ref_str.to_owned() },
-        alt_allele: if alt_str.is_empty() { "-".to_owned() } else { alt_str.to_owned() },
+        ref_allele: if ref_str.is_empty() {
+            "-".to_owned()
+        } else {
+            ref_str.to_owned()
+        },
+        alt_allele: if alt_str.is_empty() {
+            "-".to_owned()
+        } else {
+            alt_str.to_owned()
+        },
     }
 }
 

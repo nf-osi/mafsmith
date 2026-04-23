@@ -7,7 +7,10 @@ use crate::{
     },
     cli::{Annotator, Vcf2mafArgs},
     maf::{record::MafRecord, writer::MafWriter},
-    vcf::{normalization::{maf_positions, normalize}, VcfReader},
+    vcf::{
+        normalization::{maf_positions, normalize},
+        VcfReader,
+    },
 };
 use anyhow::{bail, Context, Result};
 use flate2::read::MultiGzDecoder;
@@ -37,7 +40,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         let resolved = args.ref_fasta.clone().or_else(|| {
             for name in &["reference.fa", "reference.fa.gz"] {
                 let p = data_dir.join(genome_str).join(name);
-                if p.exists() { return Some(p); }
+                if p.exists() {
+                    return Some(p);
+                }
             }
             None
         });
@@ -72,7 +77,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 let resolved_fasta = args.ref_fasta.clone().or_else(|| {
                     for name in &["reference.fa", "reference.fa.gz"] {
                         let p = data_dir.join(genome_str).join(name);
-                        if p.exists() { return Some(p); }
+                        if p.exists() {
+                            return Some(p);
+                        }
                     }
                     None
                 });
@@ -90,7 +97,14 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".vep")
                 });
                 info!("Annotating variants with Ensembl VEP...");
-                let tmp = run_vep(&vep, &args.input_vcf, &vep_data, resolved_fasta.as_deref(), genome_str, args.vep_forks)?;
+                let tmp = run_vep(
+                    &vep,
+                    &args.input_vcf,
+                    &vep_data,
+                    resolved_fasta.as_deref(),
+                    genome_str,
+                    args.vep_forks,
+                )?;
                 let path = tmp.path().to_owned();
                 (path, Some(tmp))
             }
@@ -142,12 +156,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     };
 
     let sample_names = vcf.sample_names.clone();
-    let tumor_col = resolve_sample_col(
-        args.vcf_tumor_id.as_deref(),
-        &sample_names,
-        "tumor",
-        true,
-    )?;
+    let tumor_col = resolve_sample_col(args.vcf_tumor_id.as_deref(), &sample_names, "tumor", true)?;
     let normal_col = resolve_sample_col(
         args.vcf_normal_id.as_deref(),
         &sample_names,
@@ -155,20 +164,29 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         false,
     )?;
 
-    let tumor_barcode = args.tumor_id.as_deref().unwrap_or(tumor_col.as_deref().unwrap_or("TUMOR"));
-    let normal_barcode = args.normal_id.as_deref().unwrap_or(normal_col.as_deref().unwrap_or("NORMAL"));
+    let tumor_barcode = args
+        .tumor_id
+        .as_deref()
+        .unwrap_or(tumor_col.as_deref().unwrap_or("TUMOR"));
+    let normal_barcode = args
+        .normal_id
+        .as_deref()
+        .unwrap_or(normal_col.as_deref().unwrap_or("NORMAL"));
 
     // Pre-compute sample column indices once so each record avoids a linear name scan.
-    let tumor_idx = tumor_col.as_deref()
+    let tumor_idx = tumor_col
+        .as_deref()
         .and_then(|col| sample_names.iter().position(|s| s == col));
-    let normal_idx = normal_col.as_deref()
+    let normal_idx = normal_col
+        .as_deref()
         .and_then(|col| sample_names.iter().position(|s| s == col));
 
     // Convert one VCF record to MAF row(s). Returns Vec with optional secondary SV row first.
     let convert_record = |rec: &crate::vcf::VcfRecord| -> Result<Vec<MafRecord>> {
         // Lazy CSQ parsing: parse lightweight entries for all transcripts (no String allocations),
         // then fully parse only the selected transcript.
-        let light_entries: Vec<(CsqLightEntry<'_>, &str)> = rec.csq_value()
+        let light_entries: Vec<(CsqLightEntry<'_>, &str)> = rec
+            .csq_value()
             .map(|v| csq_format.parse_all_light(v))
             .unwrap_or_default();
 
@@ -224,17 +242,24 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // - GT is all-ref or missing (hom-ref call in GVCF / no-call): pick the alt with the
         //   highest read depth in AD. vcf2maf.pl uses the same highest-depth fallback, which
         //   is why multi-allelic GVCF sites can differ from simply defaulting to ALT1.
-        let nrm_gt_set_for_alt_sel: std::collections::HashSet<usize> = normal_vals.as_deref()
+        let nrm_gt_set_for_alt_sel: std::collections::HashSet<usize> = normal_vals
+            .as_deref()
             .and_then(|nrm| {
                 let gi = rec.format_keys.iter().position(|k| k == "GT")?;
                 let nrm_gt = nrm.get(gi)?;
-                if *nrm_gt == "./." || *nrm_gt == "." { return None; }
-                Some(nrm_gt.split(|c| c == '/' || c == '|')
-                    .filter_map(|s: &str| s.parse().ok())
-                    .collect())
+                if *nrm_gt == "./." || *nrm_gt == "." {
+                    return None;
+                }
+                Some(
+                    nrm_gt
+                        .split(|c| c == '/' || c == '|')
+                        .filter_map(|s: &str| s.parse().ok())
+                        .collect(),
+                )
             })
             .unwrap_or_default();
-        let (effective_alt, effective_alt_vcf_idx) = tumor_vals.as_deref()
+        let (effective_alt, effective_alt_vcf_idx) = tumor_vals
+            .as_deref()
             .and_then(|vals| {
                 let gt_idx = rec.format_keys.iter().position(|k| k == "GT")?;
                 let gt = vals.get(gt_idx)?;
@@ -251,7 +276,10 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 let non_ref: Vec<usize> = idxs.iter().filter(|&&i| i > 0).cloned().collect();
                 if !non_ref.is_empty() {
                     let somatic_idx = if !nrm_gt_set_for_alt_sel.is_empty() {
-                        non_ref.iter().find(|idx| !nrm_gt_set_for_alt_sel.contains(*idx)).copied()
+                        non_ref
+                            .iter()
+                            .find(|idx| !nrm_gt_set_for_alt_sel.contains(*idx))
+                            .copied()
                     } else {
                         // Normal GT is no-call or there is no normal sample: take first non-ref from
                         // tumor GT without filtering (vcf2maf.pl line 640 fallback).
@@ -265,19 +293,29 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     // vcf2maf.pl: reset var_allele_idx=1, then depth-loop upgrades only when AD
                     // has the full complement of values. Truncated AD → stay at idx=1.
                     let n_alleles = 1 + rec.all_alts.len();
-                    let best_idx = rec.format_keys.iter().position(|k| k == "AD")
+                    let best_idx = rec
+                        .format_keys
+                        .iter()
+                        .position(|k| k == "AD")
                         .and_then(|ai| vals.get(ai))
                         .and_then(|ad_str| {
-                            let ad_vals: Vec<u32> = ad_str
-                                .split(',').filter_map(|v| v.parse().ok()).collect();
-                            if ad_vals.len() < n_alleles { return None; } // truncated → keep idx=1
-                            // Full AD: find first-maximum depth alt (strict >, same as vcf2maf.pl loop).
-                            ad_vals.iter().enumerate().skip(1)
-                                .fold(None::<(usize, u32)>, |best, (i, &c)| Some(match best {
-                                    None => (i, c),
-                                    Some((_, bc)) if c > bc => (i, c),
-                                    Some(b) => b,
-                                }))
+                            let ad_vals: Vec<u32> =
+                                ad_str.split(',').filter_map(|v| v.parse().ok()).collect();
+                            if ad_vals.len() < n_alleles {
+                                return None;
+                            } // truncated → keep idx=1
+                              // Full AD: find first-maximum depth alt (strict >, same as vcf2maf.pl loop).
+                            ad_vals
+                                .iter()
+                                .enumerate()
+                                .skip(1)
+                                .fold(None::<(usize, u32)>, |best, (i, &c)| {
+                                    Some(match best {
+                                        None => (i, c),
+                                        Some((_, bc)) if c > bc => (i, c),
+                                        Some(b) => b,
+                                    })
+                                })
                                 .map(|(i, _)| i)
                         })
                         .unwrap_or(1); // default var_allele_idx=1 (vcf2maf.pl fallback)
@@ -287,16 +325,24 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
                 // GT is all-ref or missing: pick highest-depth alt from AD.
                 let ad_idx = rec.format_keys.iter().position(|k| k == "AD")?;
-                let ad_vals: Vec<u32> = vals.get(ad_idx)?
-                    .split(',').filter_map(|v| v.parse().ok()).collect();
+                let ad_vals: Vec<u32> = vals
+                    .get(ad_idx)?
+                    .split(',')
+                    .filter_map(|v| v.parse().ok())
+                    .collect();
                 // Use first-maximum: when depths tie, prefer the lower allele index (vcf2maf.pl behavior).
                 // Rust's max_by_key returns the LAST maximum; fold with strict > keeps the FIRST.
-                let best_idx = ad_vals.iter().enumerate().skip(1)
-                    .fold(None::<(usize, u32)>, |best, (i, &c)| Some(match best {
-                        None => (i, c),
-                        Some((_, bc)) if c > bc => (i, c),
-                        Some(b) => b,
-                    }))
+                let best_idx = ad_vals
+                    .iter()
+                    .enumerate()
+                    .skip(1)
+                    .fold(None::<(usize, u32)>, |best, (i, &c)| {
+                        Some(match best {
+                            None => (i, c),
+                            Some((_, bc)) if c > bc => (i, c),
+                            Some(b) => b,
+                        })
+                    })
                     .map(|(i, _)| i)?;
                 let alt_allele = rec.all_alts.get(best_idx - 1)?.clone();
                 Some((alt_allele, best_idx))
@@ -309,12 +355,16 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         //
         // Fast path: SVTYPE only appears in SV records. For annotated non-SV records, INFO starts
         // with "CSQ=" and we can skip the full info_field scan (O(|info|)) in O(7) characters.
-        let svtype_tag: Option<&str> = if rec.info.starts_with("SVTYPE=") || rec.info.contains(";SVTYPE=") {
-            rec.info_field("SVTYPE")
-        } else {
-            None
-        };
-        let is_sv_to_split = matches!(svtype_tag, Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV"));
+        let svtype_tag: Option<&str> =
+            if rec.info.starts_with("SVTYPE=") || rec.info.contains(";SVTYPE=") {
+                rec.info_field("SVTYPE")
+            } else {
+                None
+            };
+        let is_sv_to_split = matches!(
+            svtype_tag,
+            Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV")
+        );
 
         // Drop records with unrecognized symbolic ALT alleles (<INS>, <CNV>, etc.) —
         // vcf2maf.pl only processes BND/TRA/DEL/DUP/INV as SV types and silently drops others.
@@ -326,7 +376,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // encoding the partner locus in the ALT notation instead.
         let raw_sv_alt = is_sv_to_split.then(|| effective_alt.clone());
         let effective_alt = if is_sv_to_split
-            && (effective_alt.starts_with('<') || effective_alt.contains('[') || effective_alt.contains(']'))
+            && (effective_alt.starts_with('<')
+                || effective_alt.contains('[')
+                || effective_alt.contains(']'))
         {
             format!("<{}>", svtype_tag.unwrap())
         } else if !effective_alt.starts_with('<')
@@ -346,40 +398,64 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // vcf2maf.pl writes a second row at (CHR2, END) for all BND/TRA/DEL/DUP/INV SVs,
         // using samtools faidx to fetch the reference base at the partner location.
         // We replicate this by reading the FASTA index (.fai) directly.
-        let sv_secondary: Option<(String, u64, String)> = if is_sv_to_split && effective_alt.starts_with('<') {
-            // CHR2 defaults to the same chromosome when absent (vcf2maf.pl behavior for DEL/DUP/INV).
-            let chr2 = rec.info_field("CHR2")
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_owned())
-                .unwrap_or_else(|| rec.chrom.clone());
-            let chr2_end = rec.info_field("END")
-                .and_then(|s| s.parse::<u64>().ok())
-                .map(|end_val| (chr2, end_val))
-                .or_else(|| raw_sv_alt.as_deref().and_then(parse_bnd_alt));
-            chr2_end.map(|(chr2, end_val)| {
-                let ref2 = sv_ref_fasta.as_deref()
-                    .and_then(|fa| fasta_fetch_base(fa, &chr2, end_val))
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| rec.ref_allele.clone());
-                (chr2, end_val, ref2)
-            })
-        } else {
-            None
-        };
+        let sv_secondary: Option<(String, u64, String)> =
+            if is_sv_to_split && effective_alt.starts_with('<') {
+                // CHR2 defaults to the same chromosome when absent (vcf2maf.pl behavior for DEL/DUP/INV).
+                let chr2 = rec
+                    .info_field("CHR2")
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_owned())
+                    .unwrap_or_else(|| rec.chrom.clone());
+                let chr2_end = rec
+                    .info_field("END")
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(|end_val| (chr2, end_val))
+                    .or_else(|| raw_sv_alt.as_deref().and_then(parse_bnd_alt));
+                chr2_end.map(|(chr2, end_val)| {
+                    let ref2 = sv_ref_fasta
+                        .as_deref()
+                        .and_then(|fa| fasta_fetch_base(fa, &chr2, end_val))
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| rec.ref_allele.clone());
+                    (chr2, end_val, ref2)
+                })
+            } else {
+                None
+            };
 
         // Allele depths — use effective alt index for correct AD field in multi-allelic records.
-        let tumor_depth = tumor_vals.as_deref()
-            .map(|vals| extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, args.strict));
-        let normal_depth = normal_vals.as_deref()
-            .map(|vals| extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, args.strict));
+        let tumor_depth = tumor_vals.as_deref().map(|vals| {
+            extract_depth(
+                rec.format_keys.as_slice(),
+                vals,
+                &rec.ref_allele,
+                &effective_alt,
+                effective_alt_vcf_idx,
+                args.strict,
+            )
+        });
+        let normal_depth = normal_vals.as_deref().map(|vals| {
+            extract_depth(
+                rec.format_keys.as_slice(),
+                vals,
+                &rec.ref_allele,
+                &effective_alt,
+                effective_alt_vcf_idx,
+                args.strict,
+            )
+        });
 
-        let var_class =
-            so_to_variant_classification(&transcript.consequences, &norm.ref_allele, &norm.alt_allele);
+        let var_class = so_to_variant_classification(
+            &transcript.consequences,
+            &norm.ref_allele,
+            &norm.alt_allele,
+        );
         let var_type = variant_type(&norm.ref_allele, &norm.alt_allele);
 
         // dbSNP: populate from VEP Existing_variation only (matching vcf2maf.pl behavior).
         // vcf2maf.pl does not use the VCF ID column for this field.
-        let dbsnp = transcript.existing_variation
+        let dbsnp = transcript
+            .existing_variation
             .split(',')
             .filter(|s| s.starts_with("rs") && s[2..].chars().all(|c| c.is_ascii_digit()))
             .collect::<Vec<_>>()
@@ -390,15 +466,20 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // hgvsp prefix is stripped inline (rfind(':')) without allocating.
         let mut all_effects = String::new();
         for (light, _) in light_entries.iter().filter(|(l, _)| !l.feature.is_empty()) {
-            if !all_effects.is_empty() { all_effects.push(';'); }
-            let cls = so_to_variant_classification(&light.consequences, &rec.ref_allele, &rec.alt_allele);
+            if !all_effects.is_empty() {
+                all_effects.push(';');
+            }
+            let cls =
+                so_to_variant_classification(&light.consequences, &rec.ref_allele, &rec.alt_allele);
             write!(all_effects, "{},", light.symbol).unwrap();
             for (i, csq) in light.consequences.iter().enumerate() {
-                if i > 0 { all_effects.push('&'); }
+                if i > 0 {
+                    all_effects.push('&');
+                }
                 all_effects.push_str(csq);
             }
             let hgvsp = light.hgvsp_raw;
-            let hgvsp_stripped = hgvsp.rfind(':').map(|p| &hgvsp[p+1..]).unwrap_or(hgvsp);
+            let hgvsp_stripped = hgvsp.rfind(':').map(|p| &hgvsp[p + 1..]).unwrap_or(hgvsp);
             write!(all_effects, ",{},{}", cls, hgvsp_stripped).unwrap();
         }
 
@@ -414,13 +495,32 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         let tumor_has_depth = tumor_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
         let normal_has_depth = normal_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
         let fmt_depth = |d: Option<u32>, truncated: bool| -> String {
-            if truncated { ".".to_owned() }
-            else { d.map(|v| v.to_string()).unwrap_or_else(|| if tumor_has_depth { ".".to_owned() } else { String::new() }) }
+            if truncated {
+                ".".to_owned()
+            } else {
+                d.map(|v| v.to_string()).unwrap_or_else(|| {
+                    if tumor_has_depth {
+                        ".".to_owned()
+                    } else {
+                        String::new()
+                    }
+                })
+            }
         };
         let fmt_normal_depth = |d: Option<u32>, truncated: bool| -> String {
-            if normal_col.is_none() { String::new() }
-            else if truncated { ".".to_owned() }
-            else { d.map(|v| v.to_string()).unwrap_or_else(|| if normal_has_depth { ".".to_owned() } else { String::new() }) }
+            if normal_col.is_none() {
+                String::new()
+            } else if truncated {
+                ".".to_owned()
+            } else {
+                d.map(|v| v.to_string()).unwrap_or_else(|| {
+                    if normal_has_depth {
+                        ".".to_owned()
+                    } else {
+                        String::new()
+                    }
+                })
+            }
         };
 
         // n_expected_ad: AD needs exactly REF + all ALTs entries for a complete read.
@@ -431,29 +531,48 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // strict mode: when AD has real values but fewer than expected, suppress depth-based allele
         // calling and report '.' for depth fields — matching vcf2maf.pl behavior.
         // Guard: ad_str != "." (missing call — those correctly serialize as '').
-        let tumor_ad_truncated = args.strict && !is_varscan_fmt && tumor_vals.as_deref()
-            .and_then(|vals| rec.format_keys.iter().position(|k| k == "AD")
-                .and_then(|ai| vals.get(ai)))
-            .map(|ad_str| *ad_str != "." && ad_str.split(',').count() < n_expected_ad)
-            .unwrap_or(false);
+        let tumor_ad_truncated = args.strict
+            && !is_varscan_fmt
+            && tumor_vals
+                .as_deref()
+                .and_then(|vals| {
+                    rec.format_keys
+                        .iter()
+                        .position(|k| k == "AD")
+                        .and_then(|ai| vals.get(ai))
+                })
+                .map(|ad_str| *ad_str != "." && ad_str.split(',').count() < n_expected_ad)
+                .unwrap_or(false);
 
         // Tumor_Seq_Allele1: sort GT allele indices and use the smallest, matching vcf2maf.
         // 0/1 or 1|0 → min=0 → ref; 1/1 → min=1 → alt.
         // No GT field (Strelka2 somatic callers): use depth-based VAF to infer het vs hom-alt.
         // GT=1/2 or 0/2 with multi-allelic: the "other" GT allele drives Tumor_Seq_Allele1.
-        let tumor_seq_allele1 = tumor_vals.as_deref()
+        let tumor_seq_allele1 = tumor_vals
+            .as_deref()
             .and_then(|vals| {
                 // When no GT field is present (e.g. Strelka2 somatic), use depth-based VAF to
                 // determine het vs hom-alt, matching vcf2maf.pl behavior.
                 // VAF >= 0.7 (min_hom_vaf default) → hom-alt → TSA1=alt; else het → TSA1=ref.
                 let gt_idx = rec.format_keys.iter().position(|k| k == "GT");
                 if gt_idx.is_none() {
-                    let ad = extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, false);
+                    let ad = extract_depth(
+                        rec.format_keys.as_slice(),
+                        vals,
+                        &rec.ref_allele,
+                        &effective_alt,
+                        effective_alt_vcf_idx,
+                        false,
+                    );
                     let hom_alt = match (ad.alt_count, ad.depth()) {
                         (Some(alt), Some(total)) if total > 0 => alt as f64 / total as f64 >= 0.7,
                         _ => false,
                     };
-                    return Some(if hom_alt { norm.alt_allele.clone() } else { norm.ref_allele.clone() });
+                    return Some(if hom_alt {
+                        norm.alt_allele.clone()
+                    } else {
+                        norm.ref_allele.clone()
+                    });
                 }
 
                 let gt_idx = gt_idx.unwrap();
@@ -471,19 +590,30 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 // (no somatic allele identified) — vcf2maf.pl sets GT=./. in this case.
                 let all_in_normal_gt = {
                     let non_ref: Vec<usize> = idxs.iter().filter(|&&i| i > 0).cloned().collect();
-                    !non_ref.is_empty() && normal_vals.as_deref().map(|nrm| {
-                        let nrm_gt_set: std::collections::HashSet<usize> = rec.format_keys.iter()
-                            .position(|k| k == "GT")
-                            .and_then(|gi| nrm.get(gi))
-                            .filter(|s| **s != "./." && **s != ".")
-                            .map(|nrm_gt| nrm_gt.split(|c| c == '/' || c == '|')
-                                .filter_map(|s: &str| s.parse().ok())
-                                .collect::<std::collections::HashSet<usize>>())
-                            .unwrap_or_default();
-                        !nrm_gt_set.is_empty() && non_ref.iter().all(|idx| nrm_gt_set.contains(idx))
-                    }).unwrap_or(false)
+                    !non_ref.is_empty()
+                        && normal_vals
+                            .as_deref()
+                            .map(|nrm| {
+                                let nrm_gt_set: std::collections::HashSet<usize> = rec
+                                    .format_keys
+                                    .iter()
+                                    .position(|k| k == "GT")
+                                    .and_then(|gi| nrm.get(gi))
+                                    .filter(|s| **s != "./." && **s != ".")
+                                    .map(|nrm_gt| {
+                                        nrm_gt
+                                            .split(|c| c == '/' || c == '|')
+                                            .filter_map(|s: &str| s.parse().ok())
+                                            .collect::<std::collections::HashSet<usize>>()
+                                    })
+                                    .unwrap_or_default();
+                                !nrm_gt_set.is_empty()
+                                    && non_ref.iter().all(|idx| nrm_gt_set.contains(idx))
+                            })
+                            .unwrap_or(false)
                 };
-                let needs_depth_fallback = idxs.is_empty() || idxs.iter().all(|&i| i == 0) || all_in_normal_gt;
+                let needs_depth_fallback =
+                    idxs.is_empty() || idxs.iter().all(|&i| i == 0) || all_in_normal_gt;
                 if needs_depth_fallback {
                     // When GT is a no-call (./.) or hom-ref (0/0), vcf2maf.pl infers
                     // het vs hom-alt from depth: VAF >= min_hom_vaf → TSA1=alt; else REF.
@@ -495,14 +625,26 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                         // Use extract_depth (handles all callers: GATK, VarScan, Strelka, etc.)
                         // instead of re-parsing AD by index, which fails for VarScan's
                         // single-value AD field (alt count only, not ref,alt array).
-                        let ad = extract_depth(rec.format_keys.as_slice(), vals,
-                            &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, false);
+                        let ad = extract_depth(
+                            rec.format_keys.as_slice(),
+                            vals,
+                            &rec.ref_allele,
+                            &effective_alt,
+                            effective_alt_vcf_idx,
+                            false,
+                        );
                         match (ad.alt_count, ad.depth()) {
-                            (Some(alt), Some(total)) if total > 0 => alt as f64 / total as f64 >= 0.7,
+                            (Some(alt), Some(total)) if total > 0 => {
+                                alt as f64 / total as f64 >= 0.7
+                            }
                             _ => false,
                         }
                     };
-                    return Some(if hom_alt { norm.alt_allele.clone() } else { norm.ref_allele.clone() });
+                    return Some(if hom_alt {
+                        norm.alt_allele.clone()
+                    } else {
+                        norm.ref_allele.clone()
+                    });
                 }
                 idxs.sort();
                 let min_idx = idxs[0];
@@ -516,11 +658,19 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     Some(i) if i != effective_alt_vcf_idx => {
                         // Other allele is a different alt — strip same prefix as normalization.
                         let other_raw = rec.all_alts.get(i - 1)?;
-                        let prefix = rec.ref_allele.as_bytes()
-                            .iter().zip(effective_alt.as_bytes().iter())
-                            .take_while(|(r, a)| r == a).count();
+                        let prefix = rec
+                            .ref_allele
+                            .as_bytes()
+                            .iter()
+                            .zip(effective_alt.as_bytes().iter())
+                            .take_while(|(r, a)| r == a)
+                            .count();
                         let stripped = &other_raw[prefix.min(other_raw.len())..];
-                        Some(if stripped.is_empty() { "-".to_owned() } else { stripped.to_owned() })
+                        Some(if stripped.is_empty() {
+                            "-".to_owned()
+                        } else {
+                            stripped.to_owned()
+                        })
                     }
                     _ => {
                         // Both GT alleles are the same (hom-alt: min==max, both == effective_alt_vcf_idx)
@@ -544,23 +694,43 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // multi-allelic sites where AD is trimmed to only the called allele).
         // Suppress for single-sample VCFs (no normal column): vcf2maf.pl skips the override
         // when there is no matched normal, matching the behavior for absent normal samples.
-        let gt_is_explicit_het = tumor_vals.as_deref().and_then(|vals| {
-            let gi = rec.format_keys.iter().position(|k| k == "GT")?;
-            let gt = vals.get(gi)?;
-            let idxs: Vec<usize> = gt.split(|c: char| c == '/' || c == '|')
-                .filter_map(|s| s.parse().ok()).collect();
-            Some(idxs.iter().any(|&i| i == 0) && idxs.iter().any(|&i| i > 0))
-        }).unwrap_or(false);
-        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele && normal_col.is_some() && !gt_is_explicit_het {
+        let gt_is_explicit_het = tumor_vals
+            .as_deref()
+            .and_then(|vals| {
+                let gi = rec.format_keys.iter().position(|k| k == "GT")?;
+                let gt = vals.get(gi)?;
+                let idxs: Vec<usize> = gt
+                    .split(|c: char| c == '/' || c == '|')
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                Some(idxs.iter().any(|&i| i == 0) && idxs.iter().any(|&i| i > 0))
+            })
+            .unwrap_or(false);
+        let tumor_seq_allele1 = if tumor_seq_allele1 == norm.ref_allele
+            && normal_col.is_some()
+            && !gt_is_explicit_het
+        {
             if let Some(vals) = tumor_vals.as_deref() {
-                let ad_full = rec.format_keys.iter().position(|k| k == "AD")
+                let ad_full = rec
+                    .format_keys
+                    .iter()
+                    .position(|k| k == "AD")
                     .and_then(|i| vals.get(i))
                     .map(|s| s.split(',').count() >= n_expected_ad)
                     .unwrap_or(false);
                 if ad_full {
-                    let ad = extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, false);
+                    let ad = extract_depth(
+                        rec.format_keys.as_slice(),
+                        vals,
+                        &rec.ref_allele,
+                        &effective_alt,
+                        effective_alt_vcf_idx,
+                        false,
+                    );
                     match (ad.alt_count, ad.depth()) {
-                        (Some(alt), Some(total)) if total > 0 && alt as f64 / total as f64 >= 0.7 => {
+                        (Some(alt), Some(total))
+                            if total > 0 && alt as f64 / total as f64 >= 0.7 =>
+                        {
                             norm.alt_allele.clone()
                         }
                         _ => tumor_seq_allele1,
@@ -575,18 +745,29 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             tumor_seq_allele1
         };
 
-        let normal_ad_truncated = args.strict && !is_varscan_fmt && normal_vals.as_deref()
-            .and_then(|vals| rec.format_keys.iter().position(|k| k == "AD")
-                .and_then(|ai| vals.get(ai)))
-            .map(|ad_str| *ad_str != "." && ad_str.split(',').count() < n_expected_ad)
-            .unwrap_or(false);
+        let normal_ad_truncated = args.strict
+            && !is_varscan_fmt
+            && normal_vals
+                .as_deref()
+                .and_then(|vals| {
+                    rec.format_keys
+                        .iter()
+                        .position(|k| k == "AD")
+                        .and_then(|ai| vals.get(ai))
+                })
+                .map(|ad_str| *ad_str != "." && ad_str.split(',').count() < n_expected_ad)
+                .unwrap_or(false);
 
         // When AD has real values but alt_vcf_idx is out of bounds (truncated multi-allelic AD),
         // output '.' for ref/alt counts (matching vcf2maf.pl), but keep t_depth from DP.
         let ad_oor = |opt_vals: Option<&[&str]>| -> bool {
             opt_vals
-                .and_then(|vals| rec.format_keys.iter().position(|k| k == "AD")
-                    .and_then(|ai| vals.get(ai).copied()))
+                .and_then(|vals| {
+                    rec.format_keys
+                        .iter()
+                        .position(|k| k == "AD")
+                        .and_then(|ai| vals.get(ai).copied())
+                })
                 .map(|ad_str| {
                     let ad_len = ad_str.split(',').count();
                     // Only applies to standard ref,alt[,...] AD arrays (≥2 entries).
@@ -595,7 +776,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 })
                 .unwrap_or(false)
         };
-        let tumor_alt_oor  = ad_oor(tumor_vals.as_deref());
+        let tumor_alt_oor = ad_oor(tumor_vals.as_deref());
         let normal_alt_oor = ad_oor(normal_vals.as_deref());
 
         let mut extra = indexmap::IndexMap::new();
@@ -610,7 +791,8 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // For "other" alleles (not REF, not effective_alt), apply the SAME prefix offset that was
         // computed for the effective_alt normalization — matching vcf2maf.pl's single-pass strip.
         let effective_prefix = (norm.pos - rec.pos) as usize;
-        let (match_norm_seq_allele1, match_norm_seq_allele2) = normal_vals.as_deref()
+        let (match_norm_seq_allele1, match_norm_seq_allele2) = normal_vals
+            .as_deref()
             .and_then(|vals| {
                 let gt_idx = rec.format_keys.iter().position(|k| k == "GT")?;
                 let gt = vals.get(gt_idx)?;
@@ -618,17 +800,24 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     .split(|c| c == '/' || c == '|')
                     .filter_map(|s: &str| s.parse().ok())
                     .collect();
-                if idxs.len() < 2 { return None; }
+                if idxs.len() < 2 {
+                    return None;
+                }
                 let resolve = |idx: usize| -> String {
                     if idx == 0 {
                         norm.ref_allele.clone()
                     } else if idx == effective_alt_vcf_idx {
                         norm.alt_allele.clone()
                     } else {
-                        rec.all_alts.get(idx - 1)
+                        rec.all_alts
+                            .get(idx - 1)
                             .map(|a| {
                                 let stripped = &a[effective_prefix.min(a.len())..];
-                                if stripped.is_empty() { "-".to_owned() } else { stripped.to_owned() }
+                                if stripped.is_empty() {
+                                    "-".to_owned()
+                                } else {
+                                    stripped.to_owned()
+                                }
                             })
                             .unwrap_or_else(|| norm.ref_allele.clone())
                     }
@@ -673,11 +862,23 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             // t_depth/n_depth: always report total depth (from DP) — not affected by AD truncation.
             // vcf2maf.pl suppresses only ref/alt counts when AD is truncated, not total depth.
             t_depth: fmt_depth(tumor_depth.as_ref().and_then(|d| d.depth()), false),
-            t_ref_count: fmt_depth(tumor_depth.as_ref().and_then(|d| d.ref_count), tumor_ad_truncated || tumor_alt_oor),
-            t_alt_count: fmt_depth(tumor_depth.as_ref().and_then(|d| d.alt_count), tumor_ad_truncated || tumor_alt_oor),
+            t_ref_count: fmt_depth(
+                tumor_depth.as_ref().and_then(|d| d.ref_count),
+                tumor_ad_truncated || tumor_alt_oor,
+            ),
+            t_alt_count: fmt_depth(
+                tumor_depth.as_ref().and_then(|d| d.alt_count),
+                tumor_ad_truncated || tumor_alt_oor,
+            ),
             n_depth: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.depth()), false),
-            n_ref_count: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.ref_count), normal_ad_truncated || normal_alt_oor),
-            n_alt_count: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.alt_count), normal_ad_truncated || normal_alt_oor),
+            n_ref_count: fmt_normal_depth(
+                normal_depth.as_ref().and_then(|d| d.ref_count),
+                normal_ad_truncated || normal_alt_oor,
+            ),
+            n_alt_count: fmt_normal_depth(
+                normal_depth.as_ref().and_then(|d| d.alt_count),
+                normal_ad_truncated || normal_alt_oor,
+            ),
             all_effects,
             vep_allele: transcript.allele.clone(),
             vep_gene: transcript.gene.clone(),
@@ -699,7 +900,11 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         if let Some((chr2, bnd_pos, ref2)) = &sv_secondary {
             let sec_norm = normalize(*bnd_pos, ref2, &effective_alt);
             let (sec_start, sec_end) = maf_positions(&sec_norm);
-            let sec_var_class = so_to_variant_classification(&transcript.consequences, &sec_norm.ref_allele, &sec_norm.alt_allele);
+            let sec_var_class = so_to_variant_classification(
+                &transcript.consequences,
+                &sec_norm.ref_allele,
+                &sec_norm.alt_allele,
+            );
             let sec_var_type = variant_type(&sec_norm.ref_allele, &sec_norm.alt_allele);
             let sec_tsa1 = if tumor_seq_allele1 == norm.ref_allele {
                 sec_norm.ref_allele.clone()
@@ -728,11 +933,11 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     const BATCH: usize = 50_000;
     let mut batch: Vec<crate::vcf::VcfRecord> = Vec::with_capacity(BATCH);
 
-    let drain = |batch: &[crate::vcf::VcfRecord], writer: &mut MafWriter<BufWriter<fs::File>>| -> Result<()> {
-        let results: Vec<Result<Vec<MafRecord>>> = batch
-            .par_iter()
-            .map(|rec| convert_record(rec))
-            .collect();
+    let drain = |batch: &[crate::vcf::VcfRecord],
+                 writer: &mut MafWriter<BufWriter<fs::File>>|
+     -> Result<()> {
+        let results: Vec<Result<Vec<MafRecord>>> =
+            batch.par_iter().map(|rec| convert_record(rec)).collect();
         for result in results {
             for maf_rec in result? {
                 writer.write_record(&maf_rec)?;
@@ -804,12 +1009,19 @@ fn validate_ref_fasta(fasta: &Path, vcf: &Path) -> Result<()> {
 
     let mut sampled: Vec<String> = Vec::new();
     for line in lines {
-        if line.starts_with('#') { continue; }
+        if line.starts_with('#') {
+            continue;
+        }
         let mut cols = line.splitn(6, '\t');
-        let chrom = match cols.next() { Some(c) => c.to_owned(), None => continue };
+        let chrom = match cols.next() {
+            Some(c) => c.to_owned(),
+            None => continue,
+        };
         // Skip the ALT check — just sample chromosomes from any data line
         sampled.push(chrom);
-        if sampled.len() >= 10 { break; }
+        if sampled.len() >= 10 {
+            break;
+        }
     }
 
     if sampled.is_empty() {
@@ -824,16 +1036,16 @@ fn validate_ref_fasta(fasta: &Path, vcf: &Path) -> Result<()> {
         "--ref-fasta '{}' does not match the genome build of input VCF '{}'. \
          VCF chromosome '{}' was not found in the FASTA index. \
          Check that the genome build and chromosome naming (chr-prefix) are consistent.",
-        fasta.display(), vcf.display(), sampled[0]
+        fasta.display(),
+        vcf.display(),
+        sampled[0]
     );
 }
 
 fn fasta_chrom_has_chr(fasta: &Path) -> bool {
     fs::File::open(fasta)
         .ok()
-        .and_then(|f| {
-            BufReader::new(f).lines().next().and_then(|l| l.ok())
-        })
+        .and_then(|f| BufReader::new(f).lines().next().and_then(|l| l.ok()))
         .map(|l| l.starts_with(">chr"))
         .unwrap_or(false)
 }
@@ -857,7 +1069,10 @@ fn vcf_chrom_has_chr(vcf: &Path) -> bool {
     false
 }
 
-fn strip_chr_prefix<R: std::io::BufRead, W: std::io::Write>(reader: R, mut writer: W) -> Result<()> {
+fn strip_chr_prefix<R: std::io::BufRead, W: std::io::Write>(
+    reader: R,
+    mut writer: W,
+) -> Result<()> {
     for line in reader.lines() {
         let line = line?;
         if line.starts_with('#') {
@@ -887,8 +1102,9 @@ fn run_fastvep(
             let src = fs::File::open(gff3)
                 .with_context(|| format!("Cannot open GFF3: {}", gff3.display()))?;
             let mut dec = MultiGzDecoder::new(BufReader::new(src));
-            let mut out = fs::File::create(&sibling)
-                .with_context(|| format!("Cannot write decompressed GFF3 to {}", sibling.display()))?;
+            let mut out = fs::File::create(&sibling).with_context(|| {
+                format!("Cannot write decompressed GFF3 to {}", sibling.display())
+            })?;
             std::io::copy(&mut dec, &mut out).context("Failed to decompress GFF3")?;
         }
         gff3_owned = sibling;
@@ -984,18 +1200,27 @@ fn run_vep(
     // resolve correctly rather than falling back to the system perl.
     let colocated_perl = vep.parent().map(|d| d.join("perl")).filter(|p| p.exists());
     let mut cmd = match &colocated_perl {
-        Some(perl) => { let mut c = Command::new(perl); c.arg(vep); c }
-        None       => Command::new(vep),
+        Some(perl) => {
+            let mut c = Command::new(perl);
+            c.arg(vep);
+            c
+        }
+        None => Command::new(vep),
     };
     cmd.args([
-        "--input_file",  input_vcf.to_str().unwrap(),
-        "--output_file", tmp.path().to_str().unwrap(),
-        "--format",      "vcf",
+        "--input_file",
+        input_vcf.to_str().unwrap(),
+        "--output_file",
+        tmp.path().to_str().unwrap(),
+        "--format",
+        "vcf",
         "--vcf",
         "--cache",
         "--offline",
-        "--dir_cache",   vep_data.to_str().unwrap(),
-        "--assembly",    assembly,
+        "--dir_cache",
+        vep_data.to_str().unwrap(),
+        "--assembly",
+        assembly,
         "--hgvs",
         "--hgvsg",
         "--symbol",
@@ -1003,7 +1228,8 @@ fn run_vep(
         "--canonical",
         "--mane",
         "--no_stats",
-        "--buffer_size", "5000",
+        "--buffer_size",
+        "5000",
         "--force_overwrite",
     ]);
     if let Some(fasta) = ref_fasta {
@@ -1013,7 +1239,8 @@ fn run_vep(
         cmd.args(["--fork", &forks.to_string()]);
     }
 
-    let status = cmd.status()
+    let status = cmd
+        .status()
         .context("Failed to run VEP. Is it installed and in PATH?")?;
 
     if !status.success() {
@@ -1022,11 +1249,7 @@ fn run_vep(
     Ok(tmp)
 }
 
-fn resolve_ref_fasta(
-    cli: &Option<PathBuf>,
-    data_dir: &Path,
-    genome: &str,
-) -> Result<PathBuf> {
+fn resolve_ref_fasta(cli: &Option<PathBuf>, data_dir: &Path, genome: &str) -> Result<PathBuf> {
     if let Some(p) = cli {
         return Ok(p.clone());
     }
@@ -1154,17 +1377,18 @@ fn fasta_fetch_base(fasta_path: &Path, chrom: &str, pos: u64) -> Option<char> {
         None
     };
 
-    let (offset, bases_per_line, bytes_per_line) = lookup(chrom)
-        .or_else(|| {
-            // Try toggling the "chr" prefix
-            if let Some(stripped) = chrom.strip_prefix("chr") {
-                lookup(stripped)
-            } else {
-                lookup(&format!("chr{}", chrom))
-            }
-        })?;
+    let (offset, bases_per_line, bytes_per_line) = lookup(chrom).or_else(|| {
+        // Try toggling the "chr" prefix
+        if let Some(stripped) = chrom.strip_prefix("chr") {
+            lookup(stripped)
+        } else {
+            lookup(&format!("chr{}", chrom))
+        }
+    })?;
 
-    if bases_per_line == 0 || pos == 0 { return None; }
+    if bases_per_line == 0 || pos == 0 {
+        return None;
+    }
     let line_num = (pos - 1) / bases_per_line;
     let col = (pos - 1) % bases_per_line;
     let byte_pos = offset + line_num * bytes_per_line + col;
@@ -1174,5 +1398,9 @@ fn fasta_fetch_base(fasta_path: &Path, chrom: &str, pos: u64) -> Option<char> {
     let mut buf = [0u8; 1];
     f.read_exact(&mut buf).ok()?;
     let c = buf[0] as char;
-    if c.is_ascii_alphabetic() { Some(c.to_ascii_uppercase()) } else { None }
+    if c.is_ascii_alphabetic() {
+        Some(c.to_ascii_uppercase())
+    } else {
+        None
+    }
 }

@@ -2,7 +2,11 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "mafsmith", version, about = "Fast, self-contained VCF↔MAF converter")]
+#[command(
+    name = "mafsmith",
+    version,
+    about = "Fast, self-contained VCF↔MAF converter"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

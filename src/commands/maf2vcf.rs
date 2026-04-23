@@ -11,9 +11,9 @@ pub async fn run(args: Maf2vcfArgs) -> Result<()> {
     let data_dir = crate::commands::fetch::data_dir(None)?;
     let genome_str = args.genome.ncbi_build();
 
-    let _ref_fasta = args.ref_fasta.unwrap_or_else(|| {
-        data_dir.join(genome_str).join("reference.fa")
-    });
+    let _ref_fasta = args
+        .ref_fasta
+        .unwrap_or_else(|| data_dir.join(genome_str).join("reference.fa"));
 
     let maf = fs::File::open(&args.input_maf)
         .with_context(|| format!("Cannot open {}", args.input_maf.display()))?;
@@ -42,12 +42,12 @@ pub async fn run(args: Maf2vcfArgs) -> Result<()> {
             .copied()
             .with_context(|| format!("MAF missing required column '{name}'"))
     };
-    let chrom_idx  = req("Chromosome")?;
-    let start_idx  = req("Start_Position")?;
-    let ref_idx    = req("Reference_Allele")?;
-    let alt_idx    = req("Tumor_Seq_Allele2")?;
-    let tsa1_idx   = req("Tumor_Seq_Allele1")?;
-    let tumor_idx  = req("Tumor_Sample_Barcode")?;
+    let chrom_idx = req("Chromosome")?;
+    let start_idx = req("Start_Position")?;
+    let ref_idx = req("Reference_Allele")?;
+    let alt_idx = req("Tumor_Seq_Allele2")?;
+    let tsa1_idx = req("Tumor_Seq_Allele1")?;
+    let tumor_idx = req("Tumor_Sample_Barcode")?;
     let normal_idx = req("Matched_Norm_Sample_Barcode")?;
 
     // Collect all unique sample pairs for per-pair VCFs
@@ -86,13 +86,13 @@ pub async fn run(args: Maf2vcfArgs) -> Result<()> {
     write_vcf_header(&mut w, genome_str, &samples)?;
 
     for row in &records {
-        let chrom      = row.get(chrom_idx).map(|s| s.as_str()).unwrap_or(".");
+        let chrom = row.get(chrom_idx).map(|s| s.as_str()).unwrap_or(".");
         let start: u64 = row.get(start_idx).and_then(|s| s.parse().ok()).unwrap_or(0);
         let ref_allele = row.get(ref_idx).map(|s| s.as_str()).unwrap_or(".");
         let alt_allele = row.get(alt_idx).map(|s| s.as_str()).unwrap_or(".");
-        let tsa1       = row.get(tsa1_idx).map(|s| s.as_str()).unwrap_or(ref_allele);
-        let tumor_id   = row.get(tumor_idx).map(|s| s.as_str()).unwrap_or("");
-        let normal_id  = row.get(normal_idx).map(|s| s.as_str()).unwrap_or("");
+        let tsa1 = row.get(tsa1_idx).map(|s| s.as_str()).unwrap_or(ref_allele);
+        let tumor_id = row.get(tumor_idx).map(|s| s.as_str()).unwrap_or("");
+        let normal_id = row.get(normal_idx).map(|s| s.as_str()).unwrap_or("");
 
         // MAF uses 1-based closed coords for SNPs; VCF is also 1-based.
         // For insertions (ref_allele == "-"), add padding base — requires FASTA.
@@ -100,9 +100,16 @@ pub async fn run(args: Maf2vcfArgs) -> Result<()> {
         let (vcf_pos, vcf_ref, vcf_alt) = maf_alleles_to_vcf(start, ref_allele, alt_allele);
 
         // Infer tumor GT from TSA1 vs REF: hom-alt when both alleles are alt, else het.
-        let tumor_gt = if tsa1 != ref_allele && tsa1 != "-" { "1/1" } else { "0/1" };
+        let tumor_gt = if tsa1 != ref_allele && tsa1 != "-" {
+            "1/1"
+        } else {
+            "0/1"
+        };
 
-        write!(w, "{chrom}\t{vcf_pos}\t.\t{vcf_ref}\t{vcf_alt}\t.\t.\t.\tGT")?;
+        write!(
+            w,
+            "{chrom}\t{vcf_pos}\t.\t{vcf_ref}\t{vcf_alt}\t.\t.\t.\tGT"
+        )?;
         for s in &samples {
             if s == tumor_id {
                 write!(w, "\t{tumor_gt}")?;
@@ -143,7 +150,10 @@ fn maf_alleles_to_vcf(start: u64, ref_allele: &str, alt_allele: &str) -> (u64, S
 fn write_vcf_header(w: &mut impl Write, genome: &str, samples: &[String]) -> Result<()> {
     writeln!(w, "##fileformat=VCFv4.2")?;
     writeln!(w, "##reference={genome}")?;
-    writeln!(w, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">")?;
+    writeln!(
+        w,
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">"
+    )?;
     write!(w, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT")?;
     for s in samples {
         write!(w, "\t{s}")?;

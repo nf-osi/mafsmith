@@ -27,13 +27,9 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
 
     let sample_names = vcf.sample_names.clone();
     let tumor_col = args.vcf_tumor_id.or_else(|| sample_names.first().cloned());
-    let normal_col = args
-        .vcf_normal_id
-        .or_else(|| sample_names.get(1).cloned());
+    let normal_col = args.vcf_normal_id.or_else(|| sample_names.get(1).cloned());
 
-    let write_record = |w: &mut BufWriter<fs::File>,
-                        rec: &crate::vcf::VcfRecord|
-     -> Result<bool> {
+    let write_record = |w: &mut BufWriter<fs::File>, rec: &crate::vcf::VcfRecord| -> Result<bool> {
         // Skip non-PASS variants (keep PASS and ".")
         if rec.filter != "PASS" && rec.filter != "." && !rec.filter.is_empty() {
             return Ok(false);
@@ -72,10 +68,14 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
 
     let mut count = 0usize;
     if let Some(rec) = first {
-        if write_record(&mut writer, &rec)? { count += 1; }
+        if write_record(&mut writer, &rec)? {
+            count += 1;
+        }
     }
     while let Some(rec) = vcf.next_record()? {
-        if write_record(&mut writer, &rec)? { count += 1; }
+        if write_record(&mut writer, &rec)? {
+            count += 1;
+        }
     }
 
     info!(

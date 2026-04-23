@@ -65,7 +65,10 @@ fn csq_parse(c: &mut Criterion) {
     });
 
     // Simulate a variant with 10 transcript entries (typical in cancer VCFs)
-    let multi_csq = std::iter::repeat(CSQ_VALUE).take(10).collect::<Vec<_>>().join(",");
+    let multi_csq = std::iter::repeat(CSQ_VALUE)
+        .take(10)
+        .collect::<Vec<_>>()
+        .join(",");
     g.throughput(Throughput::Elements(10));
     g.bench_function("parse_10_entries", |b| {
         b.iter(|| {
@@ -81,7 +84,10 @@ fn csq_parse(c: &mut Criterion) {
 
 fn transcript_select(c: &mut Criterion) {
     let fmt = CsqFormat::from_header_description(CSQ_HEADER).unwrap();
-    let multi_csq = std::iter::repeat(CSQ_VALUE).take(20).collect::<Vec<_>>().join(",");
+    let multi_csq = std::iter::repeat(CSQ_VALUE)
+        .take(20)
+        .collect::<Vec<_>>()
+        .join(",");
     let entries = fmt.parse_all(&multi_csq, &[]);
 
     c.bench_function("transcript_select/20_entries", |b| {
@@ -121,15 +127,33 @@ fn consequence_classification(c: &mut Criterion) {
     let cases: &[(&str, &[&str], &str, &str)] = &[
         ("missense", &["missense_variant"], "A", "T"),
         ("frameshift_del", &["frameshift_variant"], "AT", "A"),
-        ("splice_site", &["splice_donor_variant", "intron_variant"], "A", "T"),
-        ("multi_csq", &["missense_variant", "splice_region_variant", "synonymous_variant"], "A", "T"),
+        (
+            "splice_site",
+            &["splice_donor_variant", "intron_variant"],
+            "A",
+            "T",
+        ),
+        (
+            "multi_csq",
+            &[
+                "missense_variant",
+                "splice_region_variant",
+                "synonymous_variant",
+            ],
+            "A",
+            "T",
+        ),
     ];
 
     let mut g = c.benchmark_group("consequence");
     for (name, csqs, ref_a, alt_a) in cases {
         g.bench_with_input(BenchmarkId::from_parameter(name), name, |b, _| {
             b.iter(|| {
-                let cls = so_to_variant_classification(black_box(csqs), black_box(*ref_a), black_box(*alt_a));
+                let cls = so_to_variant_classification(
+                    black_box(csqs),
+                    black_box(*ref_a),
+                    black_box(*alt_a),
+                );
                 let vt = variant_type(black_box(*ref_a), black_box(*alt_a));
                 black_box((cls, vt))
             })

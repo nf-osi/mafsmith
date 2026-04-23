@@ -1,4 +1,7 @@
-use super::{consequence::consequence_severity, csq::{CsqEntry, CsqLightEntry}};
+use super::{
+    consequence::consequence_severity,
+    csq::{CsqEntry, CsqLightEntry},
+};
 use std::collections::HashSet;
 
 /// Biotype priority (lower = preferred). Matches vcf2maf.pl GetBiotypePriority exactly.
@@ -8,18 +11,43 @@ fn biotype_rank(biotype: &str) -> u8 {
         "LRG_gene" => 2,
         "IG_C_gene" | "IG_D_gene" | "IG_J_gene" | "IG_LV_gene" | "IG_V_gene" => 2,
         "TR_C_gene" | "TR_D_gene" | "TR_J_gene" | "TR_V_gene" => 2,
-        "miRNA" | "snRNA" | "snoRNA" | "ribozyme" | "tRNA" | "sRNA" | "scaRNA" | "rRNA"
-        | "scRNA" | "lincRNA" | "lncRNA" | "bidirectional_promoter_lncrna"
+        "miRNA"
+        | "snRNA"
+        | "snoRNA"
+        | "ribozyme"
+        | "tRNA"
+        | "sRNA"
+        | "scaRNA"
+        | "rRNA"
+        | "scRNA"
+        | "lincRNA"
+        | "lncRNA"
+        | "bidirectional_promoter_lncrna"
         | "bidirectional_promoter_lncRNA" => 3,
         "known_ncrna" | "vaultRNA" | "macro_lncRNA" | "Mt_tRNA" | "Mt_rRNA" => 4,
-        "antisense" | "antisense_RNA" | "sense_intronic" | "sense_overlapping"
-        | "3prime_overlapping_ncrna" | "3prime_overlapping_ncRNA" | "misc_RNA"
+        "antisense"
+        | "antisense_RNA"
+        | "sense_intronic"
+        | "sense_overlapping"
+        | "3prime_overlapping_ncrna"
+        | "3prime_overlapping_ncRNA"
+        | "misc_RNA"
         | "non_coding" => 5,
-        "regulatory_region" | "disrupted_domain" | "processed_transcript"
-        | "protein_coding_CDS_not_defined" | "TEC" => 6,
-        "TF_binding_site" | "CTCF_binding_site" | "promoter_flanking_region" | "enhancer"
-        | "promoter" | "open_chromatin_region" | "retained_intron"
-        | "nonsense_mediated_decay" | "non_stop_decay" | "ambiguous_orf" => 7,
+        "regulatory_region"
+        | "disrupted_domain"
+        | "processed_transcript"
+        | "protein_coding_CDS_not_defined"
+        | "TEC" => 6,
+        "TF_binding_site"
+        | "CTCF_binding_site"
+        | "promoter_flanking_region"
+        | "enhancer"
+        | "promoter"
+        | "open_chromatin_region"
+        | "retained_intron"
+        | "nonsense_mediated_decay"
+        | "non_stop_decay"
+        | "ambiguous_orf" => 7,
         bt if bt.ends_with("_pseudogene") || bt == "pseudogene" => 8,
         "artifact" => 9,
         _ => 10,
@@ -53,16 +81,22 @@ pub fn select_transcript<'a>(
             .iter()
             .filter(|e| e.feature_type.is_empty() || e.feature_type == "Transcript")
             .collect();
-        if ts.is_empty() { entries.iter().collect() } else { ts }
+        if ts.is_empty() {
+            entries.iter().collect()
+        } else {
+            ts
+        }
     };
 
     // Sort by biotype priority → consequence severity → transcript length (longest wins).
     let mut sorted: Vec<&'a CsqEntry> = candidates;
-    sorted.sort_by_key(|e| (
-        biotype_rank(&e.biotype),
-        consequence_severity(&e.consequences),  // generic: &[String] works directly
-        -(e.transcript_length as i64),
-    ));
+    sorted.sort_by_key(|e| {
+        (
+            biotype_rank(&e.biotype),
+            consequence_severity(&e.consequences), // generic: &[String] works directly
+            -(e.transcript_length as i64),
+        )
+    });
 
     // Find the "worst affected gene": first sorted entry with a non-empty gene symbol.
     let maf_gene: Option<&str> = sorted
@@ -131,30 +165,40 @@ pub fn select_transcript_light<'a>(
 
     // Filter to Transcript features, tracking original indices for the return value.
     let candidates: Vec<(usize, &CsqLightEntry<'a>)> = {
-        let ts: Vec<_> = entries.iter().enumerate()
+        let ts: Vec<_> = entries
+            .iter()
+            .enumerate()
             .filter(|(_, (e, _))| e.feature_type.is_empty() || e.feature_type == "Transcript")
             .map(|(i, (e, _))| (i, e))
             .collect();
         if ts.is_empty() {
-            entries.iter().enumerate().map(|(i, (e, _))| (i, e)).collect()
+            entries
+                .iter()
+                .enumerate()
+                .map(|(i, (e, _))| (i, e))
+                .collect()
         } else {
             ts
         }
     };
 
     let mut sorted: Vec<(usize, &CsqLightEntry<'a>)> = candidates;
-    sorted.sort_by_key(|(_, e)| (
-        biotype_rank(e.biotype),
-        consequence_severity(&e.consequences),
-        -(e.transcript_length as i64),
-    ));
+    sorted.sort_by_key(|(_, e)| {
+        (
+            biotype_rank(e.biotype),
+            consequence_severity(&e.consequences),
+            -(e.transcript_length as i64),
+        )
+    });
 
-    let maf_gene: Option<&str> = sorted.iter()
+    let maf_gene: Option<&str> = sorted
+        .iter()
         .find(|(_, e)| !e.symbol.is_empty())
         .map(|(_, e)| e.symbol);
 
     if let (Some(gene), Some(enst_set)) = (maf_gene, custom_enst) {
-        if let Some((idx, _)) = sorted.iter()
+        if let Some((idx, _)) = sorted
+            .iter()
             .find(|(_, e)| e.symbol == gene && enst_set.contains(e.feature))
         {
             return Some(*idx);
@@ -162,22 +206,22 @@ pub fn select_transcript_light<'a>(
     }
 
     if let Some(gene) = maf_gene {
-        if let Some((idx, _)) = sorted.iter()
-            .find(|(_, e)| e.symbol == gene && e.canonical)
-        {
+        if let Some((idx, _)) = sorted.iter().find(|(_, e)| e.symbol == gene && e.canonical) {
             return Some(*idx);
         }
     }
 
     if let Some(enst_set) = custom_enst {
-        if let Some((idx, _)) = sorted.iter()
+        if let Some((idx, _)) = sorted
+            .iter()
             .find(|(_, e)| !e.symbol.is_empty() && enst_set.contains(e.feature))
         {
             return Some(*idx);
         }
     }
 
-    if let Some((idx, _)) = sorted.iter()
+    if let Some((idx, _)) = sorted
+        .iter()
         .find(|(_, e)| !e.symbol.is_empty() && e.canonical)
     {
         return Some(*idx);
@@ -190,7 +234,13 @@ pub fn select_transcript_light<'a>(
 mod tests {
     use super::*;
 
-    fn make_entry_sym(feature: &str, canonical: bool, biotype: &str, csq: &str, symbol: &str) -> CsqEntry {
+    fn make_entry_sym(
+        feature: &str,
+        canonical: bool,
+        biotype: &str,
+        csq: &str,
+        symbol: &str,
+    ) -> CsqEntry {
         CsqEntry {
             feature: feature.to_owned(),
             canonical,
@@ -221,7 +271,13 @@ mod tests {
     #[test]
     fn custom_enst_wins_for_target_gene() {
         let entries = vec![
-            make_entry_sym("ENST1", true, "protein_coding", "synonymous_variant", "GENE"),
+            make_entry_sym(
+                "ENST1",
+                true,
+                "protein_coding",
+                "synonymous_variant",
+                "GENE",
+            ),
             make_entry_sym("ENST2", false, "protein_coding", "missense_variant", "GENE"),
         ];
         let mut custom = HashSet::new();
@@ -233,7 +289,12 @@ mod tests {
     #[test]
     fn biotype_tiebreaks_among_canonicals() {
         let entries = vec![
-            make_entry("ENST_RNA", true, "lncRNA", "non_coding_transcript_exon_variant"),
+            make_entry(
+                "ENST_RNA",
+                true,
+                "lncRNA",
+                "non_coding_transcript_exon_variant",
+            ),
             make_entry("ENST_PC", true, "protein_coding", "missense_variant"),
         ];
         let sel = select_transcript(&entries, None).unwrap();
@@ -256,9 +317,21 @@ mod tests {
         // vcf2maf picks gene A (best biotype) then its canonical isoform.
         // If no canonical exists for A, falls back to first sorted (non-canonical A).
         let entries = vec![
-            make_entry_sym("ENST_A1", false, "protein_coding", "intron_variant", "GENE_A"),
-            make_entry_sym("ENST_A2", true,  "protein_coding", "intron_variant", "GENE_A"),
-            make_entry_sym("ENST_B",  true,  "lincRNA",        "missense_variant", "GENE_B"),
+            make_entry_sym(
+                "ENST_A1",
+                false,
+                "protein_coding",
+                "intron_variant",
+                "GENE_A",
+            ),
+            make_entry_sym(
+                "ENST_A2",
+                true,
+                "protein_coding",
+                "intron_variant",
+                "GENE_A",
+            ),
+            make_entry_sym("ENST_B", true, "lincRNA", "missense_variant", "GENE_B"),
         ];
         let sel = select_transcript(&entries, None).unwrap();
         // GENE_A is target gene (protein_coding wins biotype sort);
@@ -272,8 +345,14 @@ mod tests {
         // vcf2maf: target=GENE_A (protein_coding), no canonical for A
         //   → priority 4: any canonical with symbol → picks ENST_B (GENE_B canonical).
         let entries = vec![
-            make_entry_sym("ENST_A", false, "protein_coding", "intron_variant", "GENE_A"),
-            make_entry_sym("ENST_B", true,  "lincRNA",        "missense_variant", "GENE_B"),
+            make_entry_sym(
+                "ENST_A",
+                false,
+                "protein_coding",
+                "intron_variant",
+                "GENE_A",
+            ),
+            make_entry_sym("ENST_B", true, "lincRNA", "missense_variant", "GENE_B"),
         ];
         let sel = select_transcript(&entries, None).unwrap();
         assert_eq!(sel.feature, "ENST_B");
@@ -283,8 +362,14 @@ mod tests {
     fn fallback_to_first_sorted_when_nothing_canonical() {
         // No canonical entries anywhere → falls back to first sorted (protein_coding).
         let entries = vec![
-            make_entry_sym("ENST_A", false, "protein_coding", "intron_variant", "GENE_A"),
-            make_entry_sym("ENST_B", false, "lincRNA",        "missense_variant", "GENE_B"),
+            make_entry_sym(
+                "ENST_A",
+                false,
+                "protein_coding",
+                "intron_variant",
+                "GENE_A",
+            ),
+            make_entry_sym("ENST_B", false, "lincRNA", "missense_variant", "GENE_B"),
         ];
         let sel = select_transcript(&entries, None).unwrap();
         assert_eq!(sel.feature, "ENST_A");

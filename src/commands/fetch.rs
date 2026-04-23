@@ -195,8 +195,8 @@ fn decompress_gz(src: &Path, dest: &Path) -> Result<()> {
     // MultiGzDecoder reads all concatenated gzip members — required for genome FASTAs which
     // are typically multi-member gzip (one per chromosome, concatenated).
     let mut decoder = MultiGzDecoder::new(BufReader::new(file));
-    let mut out = fs::File::create(dest)
-        .with_context(|| format!("Cannot create {}", dest.display()))?;
+    let mut out =
+        fs::File::create(dest).with_context(|| format!("Cannot create {}", dest.display()))?;
     std::io::copy(&mut decoder, &mut out)?;
     Ok(())
 }
@@ -211,8 +211,9 @@ fn link_or_copy(src: &Path, dest: &Path) -> Result<()> {
         let abs_src = src
             .canonicalize()
             .with_context(|| format!("Cannot resolve {}", src.display()))?;
-        std::os::unix::fs::symlink(&abs_src, dest)
-            .with_context(|| format!("Cannot symlink {} → {}", abs_src.display(), dest.display()))?;
+        std::os::unix::fs::symlink(&abs_src, dest).with_context(|| {
+            format!("Cannot symlink {} → {}", abs_src.display(), dest.display())
+        })?;
     }
     #[cfg(not(unix))]
     {

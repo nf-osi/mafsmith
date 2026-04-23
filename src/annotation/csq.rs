@@ -10,7 +10,7 @@ pub struct CsqEntry {
     pub symbol: String,
     pub gene: String,
     pub feature_type: String,
-    pub feature: String,   // transcript ID (ENST...)
+    pub feature: String, // transcript ID (ENST...)
     pub biotype: String,
     pub exon: String,
     pub intron: String,
@@ -72,7 +72,8 @@ pub struct CsqFormat {
 
 impl CsqFormat {
     fn build_light_scan(index: &HashMap<String, usize>) -> (Vec<(usize, u8)>, usize) {
-        let mut pairs: Vec<(usize, u8)> = LIGHT_FIELD_NAMES.iter()
+        let mut pairs: Vec<(usize, u8)> = LIGHT_FIELD_NAMES
+            .iter()
             .enumerate()
             .filter_map(|(slot, name)| index.get(*name).map(|&fi| (fi, slot as u8)))
             .collect();
@@ -85,7 +86,12 @@ impl CsqFormat {
     /// parse_all() on any record returns an empty Vec, causing unannotated
     /// variants to be dropped (matching vcf2maf.pl --inhibit-vep behavior).
     pub fn empty() -> Self {
-        Self { fields: Vec::new(), index: HashMap::new(), light_scan: Vec::new(), light_max: 0 }
+        Self {
+            fields: Vec::new(),
+            index: HashMap::new(),
+            light_scan: Vec::new(),
+            light_max: 0,
+        }
     }
 
     /// Parse the CSQ FORMAT from a VCF INFO description line.
@@ -99,10 +105,18 @@ impl CsqFormat {
             .context("CSQ header Description missing 'Format: '")?;
         let format_str = description[pos + marker.len()..].trim_end_matches('"');
         let fields: Vec<String> = format_str.split('|').map(|s| s.to_owned()).collect();
-        let index: HashMap<String, usize> =
-            fields.iter().enumerate().map(|(i, f)| (f.clone(), i)).collect();
+        let index: HashMap<String, usize> = fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.clone(), i))
+            .collect();
         let (light_scan, light_max) = Self::build_light_scan(&index);
-        Ok(Self { fields, index, light_scan, light_max })
+        Ok(Self {
+            fields,
+            index,
+            light_scan,
+            light_max,
+        })
     }
 
     fn get<'a>(&self, parts: &'a [&'a str], name: &str) -> &'a str {
@@ -134,7 +148,8 @@ impl CsqFormat {
 
         // slot 5 = cDNA_position
         let transcript_length: u64 = slots[5]
-            .split('/').nth(1)
+            .split('/')
+            .nth(1)
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
@@ -153,7 +168,8 @@ impl CsqFormat {
     /// Parse all CSQ entries into lightweight selection keys paired with their raw strings.
     /// Returns `(light_entry, raw_csq_entry)` — call `parse_entry(raw, fields)` on the winner.
     pub fn parse_all_light<'a>(&self, csq_value: &'a str) -> Vec<(CsqLightEntry<'a>, &'a str)> {
-        csq_value.split(',')
+        csq_value
+            .split(',')
             .map(|raw| (self.parse_light(raw), raw))
             .collect()
     }

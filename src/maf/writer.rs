@@ -22,10 +22,15 @@ impl<W: Write> MafWriter<W> {
         let w = &mut self.inner;
         // Write fields with leading tab separator (first field has no leading tab).
         macro_rules! s {
-            ($f:expr) => {{ w.write_all($f.as_bytes())?; w.write_all(b"\t")?; }};
+            ($f:expr) => {{
+                w.write_all($f.as_bytes())?;
+                w.write_all(b"\t")?;
+            }};
         }
         macro_rules! n {
-            ($v:expr) => { write!(w, "{}\t", $v)?; };
+            ($v:expr) => {
+                write!(w, "{}\t", $v)?;
+            };
         }
         s!(record.hugo_symbol);
         s!(record.entrez_gene_id);

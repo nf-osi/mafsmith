@@ -10,8 +10,16 @@ pub fn so_to_variant_classification<S: AsRef<str>>(
 ) -> &'static str {
     // Treat "-" (normalized empty allele) as length 0 so abs_diff gives the actual indel length.
     let inframe = {
-        let r = if ref_allele == "-" { 0 } else { ref_allele.len() };
-        let a = if alt_allele == "-" { 0 } else { alt_allele.len() };
+        let r = if ref_allele == "-" {
+            0
+        } else {
+            ref_allele.len()
+        };
+        let a = if alt_allele == "-" {
+            0
+        } else {
+            alt_allele.len()
+        };
         r != a && (r.abs_diff(a)) % 3 == 0
     };
     // Sort consequences by severity so the most impactful term is classified first.
@@ -22,8 +30,10 @@ pub fn so_to_variant_classification<S: AsRef<str>>(
     sorted.sort_by_key(|&c| consequence_severity::<&str>(&[c]));
     for csq in &sorted {
         let cls = match *csq {
-            "splice_acceptor_variant" | "splice_donor_variant"
-            | "transcript_ablation" | "exon_loss_variant" => "Splice_Site",
+            "splice_acceptor_variant"
+            | "splice_donor_variant"
+            | "transcript_ablation"
+            | "exon_loss_variant" => "Splice_Site",
             "stop_gained" => "Nonsense_Mutation",
             "frameshift_variant" => {
                 // Match vcf2maf.pl: Frame_Shift_{Del,Ins} only for DEL/INS var_type;
@@ -38,7 +48,11 @@ pub fn so_to_variant_classification<S: AsRef<str>>(
             }
             "protein_altering_variant" => {
                 if inframe {
-                    if alt_allele.len() > ref_allele.len() { "In_Frame_Ins" } else { "In_Frame_Del" }
+                    if alt_allele.len() > ref_allele.len() {
+                        "In_Frame_Ins"
+                    } else {
+                        "In_Frame_Del"
+                    }
                 } else if ref_allele == "-" || alt_allele.len() > ref_allele.len() {
                     "Frame_Shift_Ins"
                 } else if alt_allele == "-" || ref_allele.len() > alt_allele.len() {
@@ -77,8 +91,7 @@ pub fn so_to_variant_classification<S: AsRef<str>>(
             | "non_coding_transcript_exon_variant"
             | "non_coding_transcript_variant"
             | "nc_transcript_variant" => "RNA",
-            "5_prime_UTR_variant"
-            | "5_prime_UTR_premature_start_codon_gain_variant" => "5'UTR",
+            "5_prime_UTR_variant" | "5_prime_UTR_premature_start_codon_gain_variant" => "5'UTR",
             "3_prime_UTR_variant" => "3'UTR",
             "intron_variant" | "INTRAGENIC" | "intragenic_variant" => "Intron",
             "upstream_gene_variant" => "5'Flank",
@@ -125,9 +138,7 @@ pub fn consequence_severity<S: AsRef<str>>(consequences: &[S]) -> u8 {
             | "inframe_insertion"
             | "inframe_deletion"
             | "protein_altering_variant" => 5,
-            "missense_variant"
-            | "conservative_missense_variant"
-            | "rare_amino_acid_variant" => 6,
+            "missense_variant" | "conservative_missense_variant" | "rare_amino_acid_variant" => 6,
             "transcript_amplification" => 7,
             "splice_region_variant"
             | "splice_donor_5th_base_variant"
@@ -136,7 +147,8 @@ pub fn consequence_severity<S: AsRef<str>>(consequences: &[S]) -> u8 {
             "start_retained_variant" | "stop_retained_variant" | "synonymous_variant" => 9,
             "incomplete_terminal_codon_variant" => 10,
             "coding_sequence_variant" | "mature_miRNA_variant" | "exon_variant" => 11,
-            "5_prime_UTR_variant" | "5_prime_UTR_premature_start_codon_gain_variant"
+            "5_prime_UTR_variant"
+            | "5_prime_UTR_premature_start_codon_gain_variant"
             | "3_prime_UTR_variant" => 12,
             "non_coding_exon_variant" | "non_coding_transcript_exon_variant" => 13,
             "non_coding_transcript_variant"
@@ -226,7 +238,11 @@ mod tests {
     #[test]
     fn splice_polypyrimidine_is_targeted_region() {
         assert_eq!(
-            so_to_variant_classification(&["splice_polypyrimidine_tract_variant", "intron_variant"], "A", "T"),
+            so_to_variant_classification(
+                &["splice_polypyrimidine_tract_variant", "intron_variant"],
+                "A",
+                "T"
+            ),
             "Targeted_Region"
         );
     }

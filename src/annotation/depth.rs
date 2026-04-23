@@ -100,8 +100,16 @@ pub fn extract_depth<F: AsRef<str>>(
     // 3. Strelka SNVs: AU, CU, GU, TU (first value = tier1)
     let base_keys = ["AU", "CU", "GU", "TU"];
     if base_keys.iter().any(|k| get(k).is_some()) {
-        let ref_base = ref_allele.chars().next().unwrap_or('N').to_ascii_uppercase();
-        let alt_base = alt_allele.chars().next().unwrap_or('N').to_ascii_uppercase();
+        let ref_base = ref_allele
+            .chars()
+            .next()
+            .unwrap_or('N')
+            .to_ascii_uppercase();
+        let alt_base = alt_allele
+            .chars()
+            .next()
+            .unwrap_or('N')
+            .to_ascii_uppercase();
         let base_key = |b: char| match b {
             'A' => "AU",
             'C' => "CU",
@@ -127,9 +135,9 @@ pub fn extract_depth<F: AsRef<str>>(
         let sum_tar_tir = ref_count.zip(alt_count).map(|(r, a)| r + a);
         let total = match (dp, sum_tar_tir) {
             (Some(d), Some(s)) => Some(d.max(s)),
-            (Some(d), None)    => Some(d),
-            (None, Some(s))    => Some(s),
-            (None, None)       => None,
+            (Some(d), None) => Some(d),
+            (None, Some(s)) => Some(s),
+            (None, None) => None,
         };
         return AlleleDepth {
             ref_count,
@@ -148,21 +156,35 @@ pub fn extract_depth<F: AsRef<str>>(
             let bc_parts: Vec<u32> = bc.split(',').filter_map(|v| v.parse().ok()).collect();
             if bc_parts.len() == 4 {
                 let idx_for = |b: char| match b {
-                    'A' => 0usize, 'C' => 1, 'G' => 2, 'T' => 3, _ => 0,
+                    'A' => 0usize,
+                    'C' => 1,
+                    'G' => 2,
+                    'T' => 3,
+                    _ => 0,
                 };
                 let ref_char = ref_allele.chars().next().unwrap_or('N');
-                let alt_base = alt_allele.chars().next().unwrap_or('N').to_ascii_uppercase();
+                let alt_base = alt_allele
+                    .chars()
+                    .next()
+                    .unwrap_or('N')
+                    .to_ascii_uppercase();
                 // In strict mode, vcf2maf.pl does a case-sensitive hash lookup over {A,C,G,T}.
                 // Lowercase ref alleles (e.g. on decoy contigs) fail that lookup → ref_count='.'.
                 let ref_count = if strict && !matches!(ref_char, 'A' | 'C' | 'G' | 'T') {
                     None
                 } else {
-                    bc_parts.get(idx_for(ref_char.to_ascii_uppercase())).copied()
+                    bc_parts
+                        .get(idx_for(ref_char.to_ascii_uppercase()))
+                        .copied()
                 };
                 let alt_count = bc_parts.get(idx_for(alt_base)).copied();
                 let dp4_total = get("DP4").and_then(|dp4| {
                     let p: Vec<u32> = dp4.split(',').filter_map(|v| v.parse().ok()).collect();
-                    if p.len() == 4 { Some(p.iter().sum()) } else { None }
+                    if p.len() == 4 {
+                        Some(p.iter().sum())
+                    } else {
+                        None
+                    }
                 });
                 return AlleleDepth {
                     ref_count,
@@ -192,7 +214,8 @@ pub fn extract_depth<F: AsRef<str>>(
     // for multi-allelic sites where GT = 0/2, 0/3, etc.
     if let (Some(ro), Some(ao)) = (get("RO"), get("AO")) {
         let ref_count = ro.parse::<u32>().ok();
-        let alt_count = ao.split(',')
+        let alt_count = ao
+            .split(',')
             .nth(alt_vcf_idx.saturating_sub(1))
             .and_then(|v| v.parse().ok());
         return AlleleDepth {
@@ -214,7 +237,11 @@ pub fn extract_depth<F: AsRef<str>>(
                 _ => 0,
             };
             let ref_char = ref_allele.chars().next().unwrap_or('N');
-            let alt_base = alt_allele.chars().next().unwrap_or('N').to_ascii_uppercase();
+            let alt_base = alt_allele
+                .chars()
+                .next()
+                .unwrap_or('N')
+                .to_ascii_uppercase();
             let ref_count = if strict && !matches!(ref_char, 'A' | 'C' | 'G' | 'T') {
                 None
             } else {
@@ -306,7 +333,7 @@ mod tests {
         let vals = vec!["0/1", "44", "17,19,5,3", "0,7,1,36"];
         let d = extract_depth(&keys, &vals, "T", "C", 1, false);
         assert_eq!(d.ref_count, Some(36)); // BCOUNT[T]
-        assert_eq!(d.alt_count, Some(7));  // BCOUNT[C], not DP4 alt(8)
+        assert_eq!(d.alt_count, Some(7)); // BCOUNT[C], not DP4 alt(8)
         assert_eq!(d.total_depth, Some(44)); // DP wins over DP4 sum
     }
 
@@ -318,7 +345,7 @@ mod tests {
         let keys = vec!["GT", "DP", "DP4", "BCOUNT"];
         let vals = vec!["0/1", "173", "69,88,4,12", "0,16,0,157"];
         let d_strict = extract_depth(&keys, &vals, "t", "C", 1, true);
-        assert_eq!(d_strict.ref_count, None);   // lowercase ref → None in strict mode
+        assert_eq!(d_strict.ref_count, None); // lowercase ref → None in strict mode
         assert_eq!(d_strict.alt_count, Some(16)); // C uppercase → correct
         let d_normal = extract_depth(&keys, &vals, "t", "C", 1, false);
         assert_eq!(d_normal.ref_count, Some(157)); // converted to uppercase, finds T

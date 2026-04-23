@@ -119,4 +119,3 @@ pub const STANDARD_COLUMNS: &[&str] = &[
     "SIFT",
     "PolyPhen",
 ];
-

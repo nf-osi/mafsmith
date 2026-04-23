@@ -29,13 +29,16 @@ fn expected_dir() -> PathBuf {
 fn mafsmith_bin() -> PathBuf {
     let release = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/release/mafsmith");
     let debug = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/mafsmith");
-    if release.exists() { release } else { debug }
+    if release.exists() {
+        release
+    } else {
+        debug
+    }
 }
 
 /// Parse a TSV file (with optional leading `#version` comment) into rows.
 fn parse_tsv(path: &Path) -> Vec<HashMap<String, String>> {
-    let f = fs::File::open(path)
-        .unwrap_or_else(|e| panic!("Cannot open {}: {e}", path.display()));
+    let f = fs::File::open(path).unwrap_or_else(|e| panic!("Cannot open {}: {e}", path.display()));
     let reader = BufReader::new(f);
     let mut headers: Option<Vec<String>> = None;
     let mut rows = Vec::new();
@@ -121,21 +124,24 @@ fn expected_tsv_parseable() {
 #[test]
 fn annotated_vcf_fixture_has_csq() {
     let path = fixtures_dir().join("test_b38_annotated.vcf");
-    let content = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read annotated VCF: {e}"));
-    assert!(content.contains("CSQ="), "annotated VCF must contain CSQ annotations");
-    let data_lines: Vec<&str> = content
-        .lines()
-        .filter(|l| !l.starts_with('#'))
-        .collect();
-    assert_eq!(data_lines.len(), 6, "Expected 6 variants in annotated VCF fixture");
+    let content =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("Cannot read annotated VCF: {e}"));
+    assert!(
+        content.contains("CSQ="),
+        "annotated VCF must contain CSQ annotations"
+    );
+    let data_lines: Vec<&str> = content.lines().filter(|l| !l.starts_with('#')).collect();
+    assert_eq!(
+        data_lines.len(),
+        6,
+        "Expected 6 variants in annotated VCF fixture"
+    );
 }
 
 #[test]
 fn test_b38_vcf_fixture_has_25_variants() {
     let path = fixtures_dir().join("test_b38.vcf");
-    let content = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Cannot read test VCF: {e}"));
+    let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("Cannot read test VCF: {e}"));
     let count = content.lines().filter(|l| !l.starts_with('#')).count();
     assert_eq!(count, 25);
 }
@@ -224,13 +230,20 @@ fn het_high_vaf_allele1_stays_ref() {
     let status = Command::new(&bin)
         .args([
             "vcf2maf",
-            "--input-vcf", input_vcf.to_str().unwrap(),
-            "--output-maf", tmp.path().to_str().unwrap(),
-            "--vcf-tumor-id", "test_tumor",
-            "--tumor-id",     "test_tumor",
-            "--vcf-normal-id", "test_normal",
-            "--normal-id",     "test_normal",
-            "--genome", "grch38",
+            "--input-vcf",
+            input_vcf.to_str().unwrap(),
+            "--output-maf",
+            tmp.path().to_str().unwrap(),
+            "--vcf-tumor-id",
+            "test_tumor",
+            "--tumor-id",
+            "test_tumor",
+            "--vcf-normal-id",
+            "test_normal",
+            "--normal-id",
+            "test_normal",
+            "--genome",
+            "grch38",
             "--skip-annotation",
         ])
         .status()
@@ -238,9 +251,14 @@ fn het_high_vaf_allele1_stays_ref() {
     assert!(status.success(), "mafsmith vcf2maf exited with error");
 
     let rows = parse_tsv(tmp.path());
-    let row = rows.iter().find(|r| {
-        r.get("Start_Position").map(|s| s == "46300000").unwrap_or(false)
-    }).expect("Regression fixture row 21:46300000 not found in MAF output");
+    let row = rows
+        .iter()
+        .find(|r| {
+            r.get("Start_Position")
+                .map(|s| s == "46300000")
+                .unwrap_or(false)
+        })
+        .expect("Regression fixture row 21:46300000 not found in MAF output");
 
     assert_eq!(
         row.get("Tumor_Seq_Allele1").map(|s| s.as_str()).unwrap_or(""),
@@ -248,7 +266,9 @@ fn het_high_vaf_allele1_stays_ref() {
         "GT=0/1 het with VAF=0.9: Tumor_Seq_Allele1 must stay REF ('A'), not be overridden to ALT ('G')"
     );
     assert_eq!(
-        row.get("Tumor_Seq_Allele2").map(|s| s.as_str()).unwrap_or(""),
+        row.get("Tumor_Seq_Allele2")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
         "G",
         "Tumor_Seq_Allele2 must be ALT ('G')"
     );
@@ -301,7 +321,12 @@ fn vcf2maf_vs_vcf2maf_reference() {
 
     // Variant count should match (allow for minor differences in filtering)
     let diff = (got.len() as isize - expected.len() as isize).abs();
-    assert!(diff <= 2, "Row count differs by {diff}: got {}, expected {}", got.len(), expected.len());
+    assert!(
+        diff <= 2,
+        "Row count differs by {diff}: got {}, expected {}",
+        got.len(),
+        expected.len()
+    );
 
     // Match rows by (Chromosome, Start_Position, Reference_Allele, Tumor_Seq_Allele2)
     let key_of = |row: &HashMap<String, String>| {
@@ -336,7 +361,10 @@ fn vcf2maf_vs_vcf2maf_reference() {
         }
     }
 
-    assert_eq!(mismatches, 0, "{mismatches} column mismatches vs vcf2maf reference");
+    assert_eq!(
+        mismatches, 0,
+        "{mismatches} column mismatches vs vcf2maf reference"
+    );
 }
 
 // ── vcf2vcf regression tests ─────────────────────────────────────────────────
@@ -367,7 +395,11 @@ fn vcf2vcf_filters_and_count_correct() {
         .output()
         .expect("Failed to run mafsmith vcf2vcf");
 
-    assert!(out.status.success(), "mafsmith vcf2vcf exited with error: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "mafsmith vcf2vcf exited with error: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     // Log must report 4 written variants (PASS + filter="." ones kept; LOWQ + ref-only filtered)
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -379,7 +411,12 @@ fn vcf2vcf_filters_and_count_correct() {
     // Count non-header lines in output VCF
     let content = fs::read_to_string(tmp.path()).unwrap();
     let data_lines: Vec<&str> = content.lines().filter(|l| !l.starts_with('#')).collect();
-    assert_eq!(data_lines.len(), 4, "Output VCF must have exactly 4 data lines, got {}", data_lines.len());
+    assert_eq!(
+        data_lines.len(),
+        4,
+        "Output VCF must have exactly 4 data lines, got {}",
+        data_lines.len()
+    );
 
     // LOWQ variant at chr1:200000 must be excluded
     assert!(
@@ -461,7 +498,12 @@ fn maf2vcf_has_sample_columns() {
     );
 
     let data_lines: Vec<&str> = content.lines().filter(|l| !l.starts_with('#')).collect();
-    assert_eq!(data_lines.len(), 5, "Expected 5 variant records, got {}", data_lines.len());
+    assert_eq!(
+        data_lines.len(),
+        5,
+        "Expected 5 variant records, got {}",
+        data_lines.len()
+    );
 
     for (i, line) in data_lines.iter().enumerate() {
         let fields: Vec<&str> = line.split('\t').collect();
@@ -491,7 +533,10 @@ fn maf2vcf_has_sample_columns() {
         .find(|l| l.contains("\t7674220\t"))
         .expect("TP53 row at chr17:7674220 must be present");
     let fields: Vec<&str> = tp53_line.split('\t').collect();
-    assert_eq!(fields[9], "1/1", "TP53 with TSA1!=REF must have tumor GT=1/1");
+    assert_eq!(
+        fields[9], "1/1",
+        "TP53 with TSA1!=REF must have tumor GT=1/1"
+    );
 
     // Deletion: BRCA1 AT>- must produce padded VCF DEL (NAT > N)
     let brca1_line = data_lines
@@ -499,7 +544,10 @@ fn maf2vcf_has_sample_columns() {
         .find(|l| l.contains("chr17") && l.contains("\t43082"))
         .expect("BRCA1 deletion row must be present");
     let fields: Vec<&str> = brca1_line.split('\t').collect();
-    assert_eq!(fields[3], "NAT", "BRCA1 deletion REF must be padded to 'NAT'");
+    assert_eq!(
+        fields[3], "NAT",
+        "BRCA1 deletion REF must be padded to 'NAT'"
+    );
     assert_eq!(fields[4], "N", "BRCA1 deletion ALT must be padded 'N'");
 
     // Insertion: PIK3CA ->GTC must produce padded VCF INS (N > NGTC)
@@ -509,7 +557,10 @@ fn maf2vcf_has_sample_columns() {
         .expect("PIK3CA insertion row must be present");
     let fields: Vec<&str> = pik3ca_line.split('\t').collect();
     assert_eq!(fields[3], "N", "PIK3CA insertion REF must be padded 'N'");
-    assert_eq!(fields[4], "NGTC", "PIK3CA insertion ALT must be padded 'NGTC'");
+    assert_eq!(
+        fields[4], "NGTC",
+        "PIK3CA insertion ALT must be padded 'NGTC'"
+    );
 }
 
 // ── maf2maf regression test ───────────────────────────────────────────────────
@@ -544,15 +595,27 @@ fn maf2maf_roundtrip() {
 
     let rows = parse_tsv(tmp.path());
     // All 5 variants should survive the round-trip (some may be multi-allelic-split)
-    assert!(rows.len() >= 5, "maf2maf output must have at least 5 rows, got {}", rows.len());
+    assert!(
+        rows.len() >= 5,
+        "maf2maf output must have at least 5 rows, got {}",
+        rows.len()
+    );
 
     // Every row must have a non-empty Chromosome field
     for row in &rows {
         let chrom = row.get("Chromosome").map(|s| s.as_str()).unwrap_or("");
-        assert!(!chrom.is_empty(), "Chromosome must not be empty after maf2maf round-trip");
+        assert!(
+            !chrom.is_empty(),
+            "Chromosome must not be empty after maf2maf round-trip"
+        );
     }
 
     // EGFR SNP must survive
-    let egfr = rows.iter().find(|r| r.get("Hugo_Symbol").map(|s| s == "EGFR").unwrap_or(false));
-    assert!(egfr.is_some(), "EGFR variant must be present in maf2maf output");
+    let egfr = rows
+        .iter()
+        .find(|r| r.get("Hugo_Symbol").map(|s| s == "EGFR").unwrap_or(false));
+    assert!(
+        egfr.is_some(),
+        "EGFR variant must be present in maf2maf output"
+    );
 }

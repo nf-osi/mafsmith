@@ -8,11 +8,11 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct VcfRecord {
     pub chrom: String,
-    pub pos: u64,    // 1-based
+    pub pos: u64, // 1-based
     pub id: String,
     pub ref_allele: String,
-    pub alt_allele: String,      // first ALT only (used throughout pipeline)
-    pub all_alts: Vec<String>,   // all ALT alleles for multi-allelic GT handling
+    pub alt_allele: String,    // first ALT only (used throughout pipeline)
+    pub all_alts: Vec<String>, // all ALT alleles for multi-allelic GT handling
     pub qual: String,
     pub filter: String,
     pub info: String,
@@ -145,7 +145,8 @@ impl<R: std::io::BufRead> VcfReader<R> {
                 let keys = if fmt_str == self.last_format_str {
                     Arc::clone(&self.last_format_arc)
                 } else {
-                    let arc = Arc::new(fmt_str.split(':').map(|s| s.to_owned()).collect::<Vec<_>>());
+                    let arc =
+                        Arc::new(fmt_str.split(':').map(|s| s.to_owned()).collect::<Vec<_>>());
                     self.last_format_str.clear();
                     self.last_format_str.push_str(fmt_str);
                     self.last_format_arc = Arc::clone(&arc);
