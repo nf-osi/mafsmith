@@ -33,14 +33,14 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
 
     let write_record = |w: &mut BufWriter<fs::File>,
                         rec: &crate::vcf::VcfRecord|
-     -> Result<()> {
+     -> Result<bool> {
         // Skip non-PASS variants (keep PASS and ".")
         if rec.filter != "PASS" && rec.filter != "." && !rec.filter.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         // Skip ref-only variants
         if rec.alt_allele == "." || rec.alt_allele == rec.ref_allele {
-            return Ok(());
+            return Ok(false);
         }
 
         let format = rec.format_keys.join(":");
@@ -67,17 +67,15 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
             }
         }
         writeln!(w)?;
-        Ok(())
+        Ok(true)
     };
 
     let mut count = 0usize;
     if let Some(rec) = first {
-        write_record(&mut writer, &rec)?;
-        count += 1;
+        if write_record(&mut writer, &rec)? { count += 1; }
     }
     while let Some(rec) = vcf.next_record()? {
-        write_record(&mut writer, &rec)?;
-        count += 1;
+        if write_record(&mut writer, &rec)? { count += 1; }
     }
 
     info!(
