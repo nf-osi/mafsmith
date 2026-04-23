@@ -402,14 +402,19 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             shorten_hgvsp(&transcript.hgvsp)
         };
 
+        // When a depth object exists but a specific count is None (e.g. BCOUNT strict-mode
+        // lowercase ref lookup fails), vcf2maf.pl outputs "." not "". Use has_data() to
+        // distinguish "extracted but unknowable" (→ ".") from "no depth source at all" (→ "").
+        let tumor_has_depth = tumor_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
+        let normal_has_depth = normal_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
         let fmt_depth = |d: Option<u32>, truncated: bool| -> String {
             if truncated { ".".to_owned() }
-            else { d.map(|v| v.to_string()).unwrap_or_default() }
+            else { d.map(|v| v.to_string()).unwrap_or_else(|| if tumor_has_depth { ".".to_owned() } else { String::new() }) }
         };
         let fmt_normal_depth = |d: Option<u32>, truncated: bool| -> String {
             if normal_col.is_none() { String::new() }
             else if truncated { ".".to_owned() }
-            else { d.map(|v| v.to_string()).unwrap_or_default() }
+            else { d.map(|v| v.to_string()).unwrap_or_else(|| if normal_has_depth { ".".to_owned() } else { String::new() }) }
         };
 
         // n_expected_ad: AD needs exactly REF + all ALTs entries for a complete read.

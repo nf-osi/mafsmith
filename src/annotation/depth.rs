@@ -11,6 +11,12 @@ impl AlleleDepth {
         self.total_depth
             .or_else(|| self.ref_count.zip(self.alt_count).map(|(r, a)| r + a))
     }
+
+    /// True when at least one field was populated (i.e. extract_depth found a depth source).
+    /// Used to distinguish "extracted but None" (→ ".") from "no depth info at all" (→ "").
+    pub fn has_data(&self) -> bool {
+        self.ref_count.is_some() || self.alt_count.is_some() || self.total_depth.is_some()
+    }
 }
 
 /// Extract allele depths from a VCF sample column given FORMAT keys.
