@@ -579,6 +579,26 @@ def main():
         sys.exit("ERROR: vcf2maf.pl not found. Install via conda or pass --no-vcf2maf.")
     vep = None if (args.no_vcf2maf or args.inhibit_vep) else find_tool("vep")
 
+    # Build VEP environment: add conda bin to PATH (for tabix) and PERL5LIB so VEP
+    # Perl modules resolve correctly regardless of which perl invokes the script.
+    vep_env: dict = {}
+    if vep and not args.inhibit_vep:
+        conda_bin = vep.parent
+        vep_share_candidates = list(conda_bin.parent.glob("share/ensembl-vep-*/"))
+        perl5lib_parts = []
+        if vep_share_candidates:
+            vep_share = sorted(vep_share_candidates)[-1]
+            perl5lib_parts += [str(vep_share), str(vep_share / "modules")]
+        for lib_suffix in ("lib/perl5/5.32/site_perl", "lib/perl5/5.32",
+                           "lib/perl5/site_perl/5.32", "lib/perl5/site_perl"):
+            p = conda_bin.parent / lib_suffix
+            if p.exists():
+                perl5lib_parts.append(str(p))
+        if perl5lib_parts:
+            existing = os.environ.get("PERL5LIB", "")
+            vep_env["PERL5LIB"] = ":".join(perl5lib_parts + ([existing] if existing else []))
+        vep_env["PATH"] = str(conda_bin) + ":" + os.environ.get("PATH", "")
+
     # Resolve input
     input_label = args.input
     if args.work_dir:
@@ -695,7 +715,7 @@ def main():
             ms_cmd += ["--vep-path", str(vep)]
         if args.strict:
             ms_cmd += ["--strict"]
-        run(ms_cmd, label="mafsmith")
+        run(ms_cmd, env_extra=vep_env if not args.inhibit_vep else None, label="mafsmith")
         print(f"  → {ms_maf}", flush=True)
 
         if not args.no_vcf2maf and vcf2maf:
@@ -715,7 +735,7 @@ def main():
                     "--inhibit-vep",
                 ]
             else:
-                print(f"\nRunning vcf2maf.pl + VEP 115 (--vep-forks {args.vep_forks})...",
+                print(f"\nRunning vcf2maf.pl + VEP 112 (--vep-forks {args.vep_forks})...",
                       flush=True)
                 vc_cmd = [
                     perl, str(vcf2maf),
@@ -724,7 +744,7 @@ def main():
                     "--tumor-id",      tumor_id,
                     "--vcf-tumor-id",  vcf_tumor_id,
                     "--ncbi-build",    ncbi_build,
-                    "--cache-version", "115",
+                    "--cache-version", "112",
                     "--vep-forks",     str(args.vep_forks),
                     "--vep-data",      str(args.vep_cache),
                 ]
@@ -739,7 +759,7 @@ def main():
                 tp = vcf2maf.parent / tool
                 if tp.exists():
                     vc_cmd += [f"--{tool}-exec", str(tp)]
-            run(vc_cmd, label="vcf2maf.pl")
+            run(vc_cmd, env_extra=vep_env if not args.inhibit_vep else None, label="vcf2maf.pl")
             print(f"  → {vc_maf}", flush=True)
 
             # --- Compare (streaming: O(1) memory, no full MAF load) ---
