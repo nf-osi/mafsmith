@@ -10,7 +10,7 @@ Robert Allaway^1^, [additional authors TBD]
 
 ## Abstract
 
-The Mutation Annotation Format (MAF) is the standard interchange format for somatic variant data in cancer genomics, required by the NCI Genomic Data Commons and widely used in downstream analytical pipelines. Converting variant call format (VCF) files to MAF requires functional annotation (via tools such as the Ensembl Variant Effect Predictor) followed by complex allele normalisation and field-mapping logic. The de facto reference implementation, vcf2maf.pl, depends on a large Perl software stack and is prohibitively slow for large cohort analyses. We present mafsmith, a Rust implementation of the VCF-to-MAF conversion pipeline. mafsmith uses fastVEP for annotation and reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl, producing field-for-field identical output across thirteen validated caller types and formats spanning germline, somatic, and structural variant VCFs. Benchmarked on seven GIAB reference samples totalling 27.5 million variants, mafsmith achieves **79.4-fold** faster conversion of pre-annotated VCFs (range 74.3–84.1×), enabling rapid processing of large cancer cohorts on standard hardware. mafsmith is open source and available at https://github.com/nf-osi/mafsmith.
+The Mutation Annotation Format (MAF) is the standard interchange format for somatic variant data in cancer genomics, required by the NCI Genomic Data Commons and widely used in downstream analytical pipelines. Converting variant call format (VCF) files to MAF requires functional annotation (via tools such as the Ensembl Variant Effect Predictor) followed by complex allele normalisation and field-mapping logic. The de facto reference implementation, vcf2maf.pl, depends on a large Perl software stack and is prohibitively slow for large cohort analyses. We present mafsmith, a Rust implementation of the VCF-to-MAF conversion pipeline. mafsmith uses fastVEP for annotation and reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl, producing field-for-field identical output across fifteen validated caller types and formats spanning germline, somatic, structural variant, and annotation-database VCFs. Benchmarked on seven GIAB reference samples totalling 27.5 million variants, mafsmith achieves **79.4-fold** faster conversion of pre-annotated VCFs (range 74.3–84.1×), enabling rapid processing of large cancer cohorts on standard hardware. mafsmith is open source and available at https://github.com/nf-osi/mafsmith.
 
 ---
 
@@ -24,7 +24,7 @@ However, vcf2maf.pl has significant performance limitations. Running VEP for eac
 
 Recent development of fastVEP [Huang, 2026], a reimplementation of VEP's core annotation logic in the Rust programming language, substantially reduces annotation time — achieving up to 130-fold speedup over the original Perl VEP while maintaining complete concordance. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.pl, which processes variants at approximately 130 variants/second even when annotation is skipped. The annotation and conversion bottlenecks therefore call for complementary solutions.
 
-Here we describe mafsmith, a Rust implementation of the complete VCF-to-MAF conversion pipeline that pairs naturally with fastVEP to replace the entire vcf2maf.pl + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics — memory safety, zero-cost abstractions, and native parallelism — to achieve throughput that is impractical with the incumbent Perl/Python implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf.pl from first principles, targeting field-for-field identical output. We validate mafsmith against vcf2maf.pl across thirteen distinct variant caller types and formats spanning germline, somatic, and structural variant VCFs, demonstrate **79.4-fold** speedup for the conversion step alone (range 74.3–84.1× across seven GIAB reference samples), and describe the specific edge cases and caller-specific conventions that required careful implementation to achieve full concordance.
+Here we describe mafsmith, a Rust implementation of the complete VCF-to-MAF conversion pipeline that pairs naturally with fastVEP to replace the entire vcf2maf.pl + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics — memory safety, zero-cost abstractions, and native parallelism — to achieve throughput that is impractical with the incumbent Perl/Python implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf.pl from first principles, targeting field-for-field identical output. We validate mafsmith against vcf2maf.pl across fifteen distinct variant caller types and formats spanning germline, somatic, structural variant, and annotation-database VCFs, demonstrate **79.4-fold** speedup for the conversion step alone (range 74.3–84.1× across seven GIAB reference samples), and describe the specific edge cases and caller-specific conventions that required careful implementation to achieve full concordance.
 
 ---
 
@@ -66,25 +66,27 @@ The conversion step (post-annotation) uses Rayon [CITATION: Rayon] for parallel 
 
 ### Validation
 
-We validated mafsmith against vcf2maf.pl across thirteen caller types and VCF formats, comparing all key MAF fields (`Hugo_Symbol`, `Variant_Classification`, `Variant_Type`, `Reference_Allele`, `Tumor_Seq_Allele1`, `Tumor_Seq_Allele2`, `HGVSc`, `HGVSp`, `HGVSp_Short`, `Transcript_ID`, `Exon_Number`, `t_depth`, `t_ref_count`, `t_alt_count`, `n_depth`, `n_ref_count`, `n_alt_count`) on the same fastVEP-annotated input (Table 1). For all caller types, mafsmith produced 0 conversion-field mismatches in `--strict` mode across a total of 57.6 million variants. Remaining differences between tools are restricted to `Variant_Classification` for ~2–5 variants per dataset at gene-boundary regions where tools select different canonical transcripts, reflecting different Ensembl gene model versions rather than conversion logic.
+We validated mafsmith against vcf2maf.pl across fifteen caller types and VCF formats, comparing conversion fields (`Variant_Type`, `Reference_Allele`, `Tumor_Seq_Allele1`, `Tumor_Seq_Allele2`, `Start_Position`, `End_Position`, `t_depth`, `t_ref_count`, `t_alt_count`, `n_depth`, `n_ref_count`, `n_alt_count`) on the same input (Table 1). For all caller types, mafsmith produced 0 conversion-field mismatches in `--strict` mode across a total of 87.2 million variants. Remaining differences between tools are restricted to `Variant_Classification` for ~2–5 variants per dataset at gene-boundary regions where tools select different canonical transcripts, reflecting different Ensembl gene model versions rather than conversion logic.
 
-**Table 1. Validation of mafsmith against vcf2maf.pl (full variant sets per dataset; --strict mode; 0 conversion-field mismatches in all cases; 57.6 million variants compared in total).**
+**Table 1. Validation of mafsmith against vcf2maf.pl (--strict mode; 0 conversion-field mismatches in all cases; 87.2 million variants compared in total).**
 
-| Caller | VCF type / FORMAT fields | Source | Variants compared |
-|--------|--------------------------|--------|-------------------|
-| DeepVariant 1.2.0 | Single-sample gVCF (GT=`0/0`/`./.'`) | syn31624545 | 2,936,426 |
-| GATK MuTect2 | Single-sample GRCh38 | syn31624525 | 751,548 |
-| GATK MuTect2 (paired T/N) | `GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT | GIAB HG008; SEQC2 HCC1395 | 277,645; 271,945 |
-| FreeBayes | Single-sample | syn31624535 | 2,858,303 |
-| Strelka2 germline | Single-sample `variants.vcf` and `genome.vcf` | syn31624939; syn31624637 | 5,841,306; 3,486,411 |
-| Strelka2 somatic SNVs | Paired T/N; per-base `AU/CU/GU/TU` depth fields | GIAB HG008; SEQC2 HCC1395 | 1,562,847; 2,191,720 |
-| Strelka2 somatic indels | Paired T/N; `TAR`/`TIR` depth fields | syn68172710; GIAB HG008 | 23,375; 293,719 |
-| SV callers (Manta/DELLY) | SV-only; BND, DEL, DUP, INV symbolic ALTs | syn21296193 | 398 (all SVs) |
-| VarScan2 somatic | Paired T/N; `RD`+`AD` FORMAT | syn6840402 | 59,618 |
-| VarDict (paired T/N) | `RD` strand-bias field coexists with standard `AD` | syn6039268 | 9,303,064 |
-| SomaticSniper | Paired T/N; `DP4`+`BCOUNT` FORMAT (no `AD`) | SEQC2 HCC1395 | 164,704 |
-| GIAB germline benchmarks | Multi-caller consensus; `ADALL` field; GRCh38 | HG001–HG007 (NIST v4.2.1) | 3,839,315–4,048,342 each (27,529,001 total) |
-| COSMIC v103 | Annotation database VCF (no sample columns); GRCh38 | GenomeScreensMutant; NonCodingVariants | 3,000 each |
+| Caller | Source | Variants compared |
+|--------|--------|-------------------|
+| DeepVariant 1.2.0 | syn31624545 | 2,936,426 |
+| GATK MuTect2 (single-sample) | syn31624525 | 751,548 |
+| GATK MuTect2 (paired T/N) | GIAB HG008; SEQC2 HCC1395 | 549,590 variants from 2 samples |
+| FreeBayes | syn31624535 | 2,858,303 |
+| Strelka2 germline | syn31624939; syn31624637 | 9,327,717 variants from 2 samples |
+| Strelka2 somatic SNVs | GIAB HG008; SEQC2 HCC1395 | 3,754,567 variants from 2 samples |
+| Strelka2 somatic indels | syn68172710; GIAB HG008 | 317,094 variants from 2 samples |
+| SV callers (Manta/DELLY) | syn21296193 | 398 (all SVs) |
+| VarScan2 somatic | syn6840402 | 59,618 |
+| VarDict (paired T/N) | syn6039268 | 9,303,064 |
+| SomaticSniper | SEQC2 HCC1395 | 164,704 |
+| GIAB germline benchmarks | HG001–HG007 (NIST v4.2.1) | 27,529,001 variants from 7 samples |
+| ICGC PCAWG consensus (SNV/MNV) | ICGC PCAWG open data (GRCh37) | 21,628,933 variants from 1,902 samples |
+| DepMap CCLE WGS (GATK MuTect2) | DepMap CCLE (hg38) | 8,020,000 variants from 802 samples (10,000/sample) |
+| COSMIC v103 | GenomeScreensMutant; NonCodingVariants | 3,000 each (sampled) |
 
 ### Performance
 
@@ -155,7 +157,7 @@ mafsmith currently uses a prefix/suffix-stripping approach for allele normalisat
 
 ## Conclusion
 
-mafsmith is a fast, self-contained reimplementation of the vcf2maf.pl conversion pipeline in Rust. It produces field-for-field identical MAF output across thirteen distinct caller types and VCF formats — spanning germline, somatic, structural variant, and annotation-database VCFs — while achieving **47.6-fold** faster conversion on a single core (range 46.6–48.6×) and **79.4-fold** faster on 16 cores (range 74.3–84.1×) across seven GIAB reference samples totalling 27.5 million variants, making large-cohort VCF-to-MAF conversion practical on standard compute infrastructure. mafsmith is open source (Apache 2.0) and available at https://github.com/nf-osi/mafsmith.
+mafsmith is a fast, self-contained reimplementation of the vcf2maf.pl conversion pipeline in Rust. It produces field-for-field identical MAF output across fifteen distinct caller types and VCF formats — spanning germline, somatic, structural variant, and annotation-database VCFs — while achieving **47.6-fold** faster conversion on a single core (range 46.6–48.6×) and **79.4-fold** faster on 16 cores (range 74.3–84.1×) across seven GIAB reference samples totalling 27.5 million variants, making large-cohort VCF-to-MAF conversion practical on standard compute infrastructure. mafsmith is open source (Apache 2.0) and available at https://github.com/nf-osi/mafsmith.
 
 ---
 
