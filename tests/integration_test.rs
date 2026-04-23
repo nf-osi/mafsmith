@@ -1,4 +1,4 @@
-/// Integration tests for mafsmith VCF→MAF conversion.
+/// Integration tests for mafsmith: vcf2maf, maf2vcf, vcf2vcf, maf2maf.
 ///
 /// # Running the tests
 ///
@@ -337,4 +337,222 @@ fn vcf2maf_vs_vcf2maf_reference() {
     }
 
     assert_eq!(mismatches, 0, "{mismatches} column mismatches vs vcf2maf reference");
+}
+
+// ── vcf2vcf regression tests ─────────────────────────────────────────────────
+
+/// Regression: vcf2vcf must count only written variants, not total input records.
+///
+/// Before the fix, `count` incremented for every record read (including filtered ones),
+/// so the log claimed "wrote 7" when only 4 variants actually passed filters.
+///
+/// Also verifies that non-PASS filters and ref-only (ALT=".") variants are excluded.
+#[test]
+#[ignore = "requires compiled mafsmith binary; run `cargo build` first"]
+fn vcf2vcf_filters_and_count_correct() {
+    let bin = mafsmith_bin();
+    assert!(bin.exists(), "mafsmith binary not found; run `cargo build`");
+
+    let input_vcf = fixtures_dir().join("test_vcf2vcf.vcf");
+    let tmp = tempfile::NamedTempFile::with_suffix(".vcf").unwrap();
+
+    let out = Command::new(&bin)
+        .args([
+            "vcf2vcf",
+            "--input-vcf",
+            input_vcf.to_str().unwrap(),
+            "--output-vcf",
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run mafsmith vcf2vcf");
+
+    assert!(out.status.success(), "mafsmith vcf2vcf exited with error: {}", String::from_utf8_lossy(&out.stderr));
+
+    // Log must report 4 written variants (PASS + filter="." ones kept; LOWQ + ref-only filtered)
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("wrote 4 variants"),
+        "Expected 'wrote 4 variants' in log, got: {stderr}"
+    );
+
+    // Count non-header lines in output VCF
+    let content = fs::read_to_string(tmp.path()).unwrap();
+    let data_lines: Vec<&str> = content.lines().filter(|l| !l.starts_with('#')).collect();
+    assert_eq!(data_lines.len(), 4, "Output VCF must have exactly 4 data lines, got {}", data_lines.len());
+
+    // LOWQ variant at chr1:200000 must be excluded
+    assert!(
+        !content.contains("\t200000\t"),
+        "LOWQ variant at pos 200000 must be filtered out"
+    );
+
+    // ref-only variant at chr1:400000 (ALT=".") must be excluded
+    assert!(
+        !content.contains("\t400000\t"),
+        "Ref-only variant at pos 400000 must be filtered out"
+    );
+
+    // LOWQ;DP variant at chr1:600000 must be excluded
+    assert!(
+        !content.contains("\t600000\t"),
+        "LOWQ;DP variant at pos 600000 must be filtered out"
+    );
+
+    // PASS variant at chr1:100000 must be present
+    assert!(
+        content.contains("\t100000\t"),
+        "PASS variant at pos 100000 must be in output"
+    );
+
+    // filter="." variant at chr1:500000 must be present (treated as unfiltered)
+    assert!(
+        content.contains("\t500000\t"),
+        "filter='.' variant at pos 500000 must be in output"
+    );
+}
+
+// ── maf2vcf regression tests ─────────────────────────────────────────────────
+
+/// Regression: maf2vcf must emit per-sample GT values in VCF output.
+///
+/// Before the fix, each data line ended after the FORMAT field with no sample columns,
+/// producing invalid VCF that lacked genotype information.
+///
+/// Also verifies indel allele conversion (MAF "-" → VCF padding base).
+#[test]
+#[ignore = "requires compiled mafsmith binary; run `cargo build` first"]
+fn maf2vcf_has_sample_columns() {
+    let bin = mafsmith_bin();
+    assert!(bin.exists(), "mafsmith binary not found; run `cargo build`");
+
+    let input_maf = fixtures_dir().join("test_maf2vcf.maf");
+    let tmp = tempfile::NamedTempFile::with_suffix(".vcf").unwrap();
+
+    let status = Command::new(&bin)
+        .args([
+            "maf2vcf",
+            "--input-maf",
+            input_maf.to_str().unwrap(),
+            "--output-vcf",
+            tmp.path().to_str().unwrap(),
+            "--genome",
+            "grch38",
+        ])
+        .status()
+        .expect("Failed to run mafsmith maf2vcf");
+
+    assert!(status.success(), "mafsmith maf2vcf exited with error");
+
+    let content = fs::read_to_string(tmp.path()).unwrap();
+    let header_line = content
+        .lines()
+        .find(|l| l.starts_with("#CHROM"))
+        .expect("VCF must contain a #CHROM header line");
+
+    // Header must declare both sample columns
+    assert!(
+        header_line.contains("TUMOR_SAMPLE_1"),
+        "VCF header must list TUMOR_SAMPLE_1 sample column"
+    );
+    assert!(
+        header_line.contains("NORMAL_SAMPLE_1"),
+        "VCF header must list NORMAL_SAMPLE_1 sample column"
+    );
+
+    let data_lines: Vec<&str> = content.lines().filter(|l| !l.starts_with('#')).collect();
+    assert_eq!(data_lines.len(), 5, "Expected 5 variant records, got {}", data_lines.len());
+
+    for (i, line) in data_lines.iter().enumerate() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        // 9 standard VCF fields + 2 sample columns = 11 total
+        assert_eq!(
+            fields.len(),
+            11,
+            "Data line {i} must have 11 tab-separated fields (9 VCF + 2 samples), got {}: {line}",
+            fields.len()
+        );
+        // FORMAT column must be "GT"
+        assert_eq!(fields[8], "GT", "FORMAT field must be 'GT' in line {i}");
+        // Sample GT values must be non-empty
+        assert!(
+            !fields[9].is_empty(),
+            "Tumor GT must not be empty in line {i}"
+        );
+        assert!(
+            !fields[10].is_empty(),
+            "Normal GT must not be empty in line {i}"
+        );
+    }
+
+    // hom-alt inference: TP53 row has TSA1=G which != REF (C), so tumor GT must be 1/1
+    let tp53_line = data_lines
+        .iter()
+        .find(|l| l.contains("\t7674220\t"))
+        .expect("TP53 row at chr17:7674220 must be present");
+    let fields: Vec<&str> = tp53_line.split('\t').collect();
+    assert_eq!(fields[9], "1/1", "TP53 with TSA1!=REF must have tumor GT=1/1");
+
+    // Deletion: BRCA1 AT>- must produce padded VCF DEL (NAT > N)
+    let brca1_line = data_lines
+        .iter()
+        .find(|l| l.contains("chr17") && l.contains("\t43082"))
+        .expect("BRCA1 deletion row must be present");
+    let fields: Vec<&str> = brca1_line.split('\t').collect();
+    assert_eq!(fields[3], "NAT", "BRCA1 deletion REF must be padded to 'NAT'");
+    assert_eq!(fields[4], "N", "BRCA1 deletion ALT must be padded 'N'");
+
+    // Insertion: PIK3CA ->GTC must produce padded VCF INS (N > NGTC)
+    let pik3ca_line = data_lines
+        .iter()
+        .find(|l| l.contains("chr3"))
+        .expect("PIK3CA insertion row must be present");
+    let fields: Vec<&str> = pik3ca_line.split('\t').collect();
+    assert_eq!(fields[3], "N", "PIK3CA insertion REF must be padded 'N'");
+    assert_eq!(fields[4], "NGTC", "PIK3CA insertion ALT must be padded 'NGTC'");
+}
+
+// ── maf2maf regression test ───────────────────────────────────────────────────
+
+/// End-to-end maf2maf round-trip: MAF → VCF → fastVEP annotation → MAF.
+///
+/// Requires: fastVEP binary, GRCh38 reference FASTA and GFF3 (via `mafsmith fetch`).
+/// Run with: cargo test -- --include-ignored maf2maf_roundtrip
+#[test]
+#[ignore = "requires fastVEP and GRCh38 reference data; run `mafsmith fetch --genome grch38` first"]
+fn maf2maf_roundtrip() {
+    let bin = mafsmith_bin();
+    assert!(bin.exists(), "mafsmith binary not found; run `cargo build`");
+
+    let input_maf = fixtures_dir().join("test_maf2vcf.maf");
+    let tmp = tempfile::NamedTempFile::with_suffix(".maf").unwrap();
+
+    let status = Command::new(&bin)
+        .args([
+            "maf2maf",
+            "--input-maf",
+            input_maf.to_str().unwrap(),
+            "--output-maf",
+            tmp.path().to_str().unwrap(),
+            "--genome",
+            "grch38",
+        ])
+        .status()
+        .expect("Failed to run mafsmith maf2maf");
+
+    assert!(status.success(), "mafsmith maf2maf exited with error");
+
+    let rows = parse_tsv(tmp.path());
+    // All 5 variants should survive the round-trip (some may be multi-allelic-split)
+    assert!(rows.len() >= 5, "maf2maf output must have at least 5 rows, got {}", rows.len());
+
+    // Every row must have a non-empty Chromosome field
+    for row in &rows {
+        let chrom = row.get("Chromosome").map(|s| s.as_str()).unwrap_or("");
+        assert!(!chrom.is_empty(), "Chromosome must not be empty after maf2maf round-trip");
+    }
+
+    // EGFR SNP must survive
+    let egfr = rows.iter().find(|r| r.get("Hugo_Symbol").map(|s| s == "EGFR").unwrap_or(false));
+    assert!(egfr.is_some(), "EGFR variant must be present in maf2maf output");
 }

@@ -1,0 +1,7 @@
+#version 2.4
+Hugo_Symbol	Entrez_Gene_Id	Center	NCBI_Build	Chromosome	Start_Position	End_Position	Strand	Variant_Classification	Variant_Type	Reference_Allele	Tumor_Seq_Allele1	Tumor_Seq_Allele2	dbSNP_RS	dbSNP_Val_Status	Tumor_Sample_Barcode	Matched_Norm_Sample_Barcode	Match_Norm_Seq_Allele1	Match_Norm_Seq_Allele2	Tumor_Validation_Allele1	Tumor_Validation_Allele2	Match_Norm_Validation_Allele1	Match_Norm_Validation_Allele2	Verification_Status	Validation_Status	Mutation_Status	Sequencing_Phase	Sequence_Source	Validation_Method	Score	BAM_File	Sequencer	Tumor_Sample_UUID	Matched_Norm_Sample_UUID	HGVSc	HGVSp	HGVSp_Short	Transcript_ID	Exon_Number	t_depth	t_ref_count	t_alt_count	n_depth	n_ref_count	n_alt_count	all_effects	Allele	Gene	Feature	BIOTYPE	CANONICAL	SIFT	PolyPhen
+EGFR	1956		GRCh38	chr7	55174014	55174014	+	Missense_Mutation	SNP	A	A	T			TUMOR_SAMPLE_1	NORMAL_SAMPLE_1						Somatic						45	20	25	50	50	0
+TP53	7157		GRCh38	chr17	7674220	7674220	+	Missense_Mutation	SNP	C	G	G			TUMOR_SAMPLE_1	NORMAL_SAMPLE_1						Somatic						30	5	25	40	40	0
+KRAS	3845		GRCh38	chr12	25245350	25245350	+	Missense_Mutation	SNP	G	G	T			TUMOR_SAMPLE_1	NORMAL_SAMPLE_1						Somatic						60	30	30	55	55	0
+BRCA1	672		GRCh38	chr17	43082434	43082435	+	Frame_Shift_Del	DEL	AT	AT	-			TUMOR_SAMPLE_1	NORMAL_SAMPLE_1						Somatic						40	10	30	45	45	0
+PIK3CA	5290		GRCh38	chr3	179234297	179234296	+	Frame_Shift_Ins	INS	-	-	GTC			TUMOR_SAMPLE_1	NORMAL_SAMPLE_1						Somatic						35	15	20	38	38	0

@@ -35,8 +35,11 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // Auto-resolve ref-fasta even in skip-annotation mode so we can validate the genome build.
         // If it's not available (user hasn't run `mafsmith fetch`), warn and skip validation.
         let resolved = args.ref_fasta.clone().or_else(|| {
-            let p = data_dir.join(genome_str).join("reference.fa");
-            if p.exists() { Some(p) } else { None }
+            for name in &["reference.fa", "reference.fa.gz"] {
+                let p = data_dir.join(genome_str).join(name);
+                if p.exists() { return Some(p); }
+            }
+            None
         });
         match resolved {
             Some(ref rf) => {
@@ -67,8 +70,11 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 // Ref FASTA is optional in VEP mode (VEP manages its own cache).
                 // Resolve it for SV base lookup and build validation if available.
                 let resolved_fasta = args.ref_fasta.clone().or_else(|| {
-                    let p = data_dir.join(genome_str).join("reference.fa");
-                    if p.exists() { Some(p) } else { None }
+                    for name in &["reference.fa", "reference.fa.gz"] {
+                        let p = data_dir.join(genome_str).join(name);
+                        if p.exists() { return Some(p); }
+                    }
+                    None
                 });
                 if let Some(ref rf) = resolved_fasta {
                     sv_ref_fasta = Some(rf.clone());
@@ -1024,15 +1030,17 @@ fn resolve_ref_fasta(
     if let Some(p) = cli {
         return Ok(p.clone());
     }
-    let p = data_dir.join(genome).join("reference.fa");
-    if !p.exists() {
-        bail!(
-            "Reference FASTA not found at {}. Run `mafsmith fetch --genome {}` first.",
-            p.display(),
-            genome.to_lowercase()
-        );
+    for name in &["reference.fa", "reference.fa.gz"] {
+        let p = data_dir.join(genome).join(name);
+        if p.exists() {
+            return Ok(p);
+        }
     }
-    Ok(p)
+    bail!(
+        "Reference FASTA not found under {}. Run `mafsmith fetch --genome {}` first.",
+        data_dir.join(genome).display(),
+        genome.to_lowercase()
+    );
 }
 
 fn resolve_gff3(cli: &Option<PathBuf>, data_dir: &Path, genome: &str) -> Result<PathBuf> {
