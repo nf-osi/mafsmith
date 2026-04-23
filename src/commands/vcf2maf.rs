@@ -363,9 +363,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
         // Allele depths — use effective alt index for correct AD field in multi-allelic records.
         let tumor_depth = tumor_vals.as_deref()
-            .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
+            .map(|vals| extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, args.strict));
         let normal_depth = normal_vals.as_deref()
-            .map(|vals| extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx));
+            .map(|vals| extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, args.strict));
 
         let var_class =
             so_to_variant_classification(&transcript.consequences, &norm.ref_allele, &norm.alt_allele);
@@ -437,7 +437,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 // VAF >= 0.7 (min_hom_vaf default) → hom-alt → TSA1=alt; else het → TSA1=ref.
                 let gt_idx = rec.format_keys.iter().position(|k| k == "GT");
                 if gt_idx.is_none() {
-                    let ad = extract_depth(rec.format_keys.as_slice(),vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx);
+                    let ad = extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, false);
                     let hom_alt = match (ad.alt_count, ad.depth()) {
                         (Some(alt), Some(total)) if total > 0 => alt as f64 / total as f64 >= 0.7,
                         _ => false,
@@ -485,7 +485,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                         // instead of re-parsing AD by index, which fails for VarScan's
                         // single-value AD field (alt count only, not ref,alt array).
                         let ad = extract_depth(rec.format_keys.as_slice(), vals,
-                            &rec.ref_allele, &effective_alt, effective_alt_vcf_idx);
+                            &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, false);
                         match (ad.alt_count, ad.depth()) {
                             (Some(alt), Some(total)) if total > 0 => alt as f64 / total as f64 >= 0.7,
                             _ => false,
@@ -547,7 +547,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     .map(|s| s.split(',').count() >= n_expected_ad)
                     .unwrap_or(false);
                 if ad_full {
-                    let ad = extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx);
+                    let ad = extract_depth(rec.format_keys.as_slice(), vals, &rec.ref_allele, &effective_alt, effective_alt_vcf_idx, false);
                     match (ad.alt_count, ad.depth()) {
                         (Some(alt), Some(total)) if total > 0 && alt as f64 / total as f64 >= 0.7 => {
                             norm.alt_allele.clone()

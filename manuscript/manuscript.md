@@ -73,8 +73,7 @@ We validated mafsmith against vcf2maf.pl across thirteen caller types and VCF fo
 | Caller | VCF type / FORMAT fields | Source | Variants compared |
 |--------|--------------------------|--------|-------------------|
 | DeepVariant 1.2.0 | Single-sample gVCF (GT=`0/0`/`./.'`) | syn31624545 | 20,000 |
-| DeepVariant 1.2.0 | Single-sample gVCF with `VAF` field | syn4988483 (VA02, VA06) | 20,000 each |
-| GATK MuTect2 | Single-sample GRCh38 | syn64156972; syn31624525 | 20,000 each |
+| GATK MuTect2 | Single-sample GRCh38 | syn31624525 | 20,000 |
 | GATK MuTect2 (paired T/N) | `GT:AD:AF:DP:F1R2:F2R1:SB` FORMAT | GIAB HG008; SEQC2 HCC1395 | 20,000 each |
 | FreeBayes | Single-sample | syn31624535 | 20,000 |
 | Strelka2 germline | Single-sample `variants.vcf` and `genome.vcf` | syn31624939; syn31624637 | 20,000 each |
@@ -166,7 +165,7 @@ mafsmith source code and release binaries are available at https://github.com/nf
 
 Validation and benchmark VCF datasets used in this work:
 
-- **NF-OSI Synapse project (syn16858331):** Validation VCF files from multiple callers (syn31624545, syn64156972, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637, syn4988483). Available at: https://synapse.org
+- **NF-OSI Synapse project (syn16858331):** Validation VCF files from multiple callers (syn31624545, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637). Available at: https://synapse.org
 - **GIAB HG008 somatic (NYGC pipeline, GRCh38):** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/
 - **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38):** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/
 - **COLO829 somatic SV truth set (hg38):** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Zenodo: https://zenodo.org/records/7515830

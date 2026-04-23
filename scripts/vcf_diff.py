@@ -37,8 +37,8 @@ MAFSMITH  = REPO / "target" / "release" / "mafsmith"
 VEP_CACHE = Path.home() / ".vep"
 
 REF_FASTA_BY_GENOME = {
-    "grch38": Path.home() / ".mafsmith" / "hg38" / "reference.fa",
-    "grch37": Path.home() / ".mafsmith" / "hg19" / "reference.fa",
+    "grch38": Path.home() / ".vep" / "homo_sapiens" / "112_GRCh38" / "Homo_sapiens.GRCh38.dna.toplevel.chr.fa.gz",
+    "grch37": Path.home() / ".vep" / "homo_sapiens" / "112_GRCh37" / "Homo_sapiens.GRCh37.dna.toplevel.fa.gz",
     "grcm39": Path.home() / ".mafsmith" / "grcm39" / "reference.fa",
 }
 NCBI_BUILD_BY_GENOME = {
@@ -221,6 +221,118 @@ def variant_key(row):
 # ---------------------------------------------------------------------------
 # Comparison logic
 # ---------------------------------------------------------------------------
+
+def _iter_maf_sparse(path, need_fields):
+    """Yield sparse row dicts (only need_fields + variant-key columns) from a MAF file."""
+    need = set(need_fields) | {"Chromosome", "Start_Position", "Reference_Allele", "Tumor_Seq_Allele2"}
+    col_idx = {}
+    header_parsed = False
+    with open(str(path)) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            cols = line.rstrip("\n").split("\t")
+            if not header_parsed:
+                col_idx = {c: i for i, c in enumerate(cols) if c in need}
+                header_parsed = True
+                continue
+            yield {c: cols[i] if i < len(cols) else "" for c, i in col_idx.items()}
+
+
+def _emit_diff(ms_row, vc_row, cmp_fields, diffs_by_variant):
+    diffs = [
+        {"field": col, "ms_val": ms_row.get(col, ""), "vc_val": vc_row.get(col, "")}
+        for col in sorted(cmp_fields)
+        if ms_row.get(col, "") != vc_row.get(col, "")
+    ]
+    if diffs:
+        diffs_by_variant.append({"key": variant_key(ms_row), "diffs": diffs})
+
+
+def compare_mafs_streaming(ms_path, vc_path, cmp_fields=None):
+    """Memory-efficient MAF comparison: streams both files simultaneously.
+
+    Assumes both MAFs are in the same genomic order (always true when both
+    tools processed the same sorted input VCF). Falls back to a pending-row
+    dict only when order diverges (SV secondary rows, etc.) — normally empty.
+
+    Returns the same structure as compare_mafs().
+    """
+    from itertools import zip_longest
+
+    if cmp_fields is None:
+        cmp_fields = CONVERSION_FIELDS
+
+    ms_iter = _iter_maf_sparse(ms_path, cmp_fields)
+    vc_iter = _iter_maf_sparse(vc_path, cmp_fields)
+
+    ms_total = vc_total = vc_empty_chr = matched_count = 0
+    only_in_vc = []
+    only_in_ms_rows = []
+    diffs_by_variant = []
+
+    # Pending rows that didn't match in expected position (normally empty).
+    ms_pending = defaultdict(list)  # key -> [row, ...]
+    vc_pending = {}                 # key -> row
+
+    _sentinel = object()
+
+    for ms_raw, vc_raw in zip_longest(ms_iter, vc_iter, fillvalue=_sentinel):
+        ms_row = None if ms_raw is _sentinel else ms_raw
+        vc_row = None if vc_raw is _sentinel else vc_raw
+
+        if ms_row is not None:
+            ms_total += 1
+        if vc_row is not None:
+            vc_total += 1
+            if not vc_row.get("Chromosome"):
+                vc_empty_chr += 1
+                vc_row = None
+
+        ms_key = variant_key(ms_row) if ms_row else None
+        vc_key = variant_key(vc_row) if vc_row else None
+
+        if ms_key and vc_key and ms_key == vc_key:
+            matched_count += 1
+            _emit_diff(ms_row, vc_row, cmp_fields, diffs_by_variant)
+            continue
+
+        if ms_row:
+            if ms_key in vc_pending:
+                matched_count += 1
+                _emit_diff(ms_row, vc_pending.pop(ms_key), cmp_fields, diffs_by_variant)
+            else:
+                ms_pending[ms_key].append(ms_row)
+
+        if vc_row:
+            if vc_key in ms_pending:
+                ms_candidates = ms_pending[vc_key]
+                ms_match = ms_candidates.pop(0)
+                if not ms_candidates:
+                    del ms_pending[vc_key]
+                matched_count += 1
+                _emit_diff(ms_match, vc_row, cmp_fields, diffs_by_variant)
+            else:
+                vc_pending[vc_key] = vc_row
+
+    for k, rows in sorted(ms_pending.items()):
+        for row in rows:
+            if row.get("Tumor_Seq_Allele2", "") not in SV_ALTS:
+                only_in_ms_rows.append((k, row))
+
+    for k, row in sorted(vc_pending.items()):
+        only_in_vc.append((k, row))
+
+    return {
+        "ms_total": ms_total,
+        "vc_total": vc_total,
+        "vc_empty_chr": vc_empty_chr,
+        "matched": matched_count,
+        "only_in_vc": only_in_vc,
+        "only_in_ms": only_in_ms_rows,
+        "diffs_by_variant": diffs_by_variant,
+    }
+
 
 def compare_mafs(ms_rows, vc_rows, cmp_fields=None):
     """Return a structured diff dict comparing only cmp_fields (default: CONVERSION_FIELDS)."""
@@ -420,8 +532,14 @@ def main():
                         "Variant_Classification is excluded from the diff")
     p.add_argument("--no-vcf2maf",   action="store_true",
                    help="Skip vcf2maf.pl — run mafsmith only (no diff produced)")
+    p.add_argument("--no-keep-mafs", action="store_true",
+                   help="Delete MAF files after writing diff.txt (saves disk space in batch runs)")
     p.add_argument("--keep-work",    action="store_true",
                    help="Keep temp working directory after finishing")
+    p.add_argument("--work-dir",     type=Path, default=None,
+                   help="Parent directory for temp working files (default: system /tmp). "
+                        "Use a real disk path to avoid RAM-backed tmpfs pressure on "
+                        "instances where /tmp is a tmpfs.")
     args = p.parse_args()
 
     # Resolve ref_fasta from genome if not given explicitly
@@ -442,7 +560,9 @@ def main():
 
     # Resolve input
     input_label = args.input
-    work_dir = Path(tempfile.mkdtemp(prefix="vcf_diff_work_"))
+    if args.work_dir:
+        args.work_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(prefix="vcf_diff_work_", dir=args.work_dir))
 
     try:
         if args.input.startswith("syn"):
@@ -543,7 +663,7 @@ def main():
                 "--vep-data",  str(args.vep_cache),
                 "--vep-forks", str(args.vep_forks),
             ]
-        if args.ref_fasta:
+        if args.ref_fasta and not args.inhibit_vep:
             ms_cmd += ["--ref-fasta", str(args.ref_fasta)]
         if normal_id:
             ms_cmd += ["--vcf-normal-id", vcf_normal_id, "--normal-id", normal_id]
@@ -598,11 +718,9 @@ def main():
             run(vc_cmd, label="vcf2maf.pl")
             print(f"  → {vc_maf}", flush=True)
 
-            # --- Compare ---
+            # --- Compare (streaming: O(1) memory, no full MAF load) ---
             print("\nComparing MAFs...", flush=True)
-            ms_rows = read_maf(str(ms_maf))
-            vc_rows = read_maf(str(vc_maf))
-            diff = compare_mafs(ms_rows, vc_rows, cmp_fields=cmp_fields)
+            diff = compare_mafs_streaming(str(ms_maf), str(vc_maf), cmp_fields=cmp_fields)
 
             mode_tag = "--inhibit-vep" if args.inhibit_vep else f"+VEP ({ncbi_build}, --vep-forks {args.vep_forks})"
             strict_tag = "(--strict)" if args.strict else ""
@@ -612,6 +730,10 @@ def main():
             )
             write_diff_report(diff, diff_path, input_label,
                               tumor_id, normal_id, run_desc, cmp_fields=cmp_fields)
+
+            if args.no_keep_mafs:
+                ms_maf.unlink(missing_ok=True)
+                vc_maf.unlink(missing_ok=True)
 
             n_diffs = len(diff["diffs_by_variant"])
 
