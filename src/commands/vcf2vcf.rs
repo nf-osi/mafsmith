@@ -30,15 +30,12 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
     let normal_col = args.vcf_normal_id.or_else(|| sample_names.get(1).cloned());
 
     let write_record = |w: &mut BufWriter<fs::File>, rec: &crate::vcf::VcfRecord| -> Result<bool> {
-        // Skip non-PASS variants (keep PASS and ".")
-        if rec.filter != "PASS" && rec.filter != "." && !rec.filter.is_empty() {
-            return Ok(false);
-        }
-        // Skip ref-only variants
+        // Skip ref-only variants (spanning deletions or gVCF blocks)
         if rec.alt_allele == "." || rec.alt_allele == rec.ref_allele {
             return Ok(false);
         }
 
+        let all_alts = rec.all_alts.join(",");
         let format = rec.format_keys.join(":");
         write!(
             w,
@@ -47,7 +44,7 @@ pub async fn run(args: Vcf2vcfArgs) -> Result<()> {
             rec.pos,
             rec.id,
             rec.ref_allele,
-            rec.alt_allele,
+            all_alts,
             rec.qual,
             rec.filter,
             rec.info,

@@ -19,7 +19,7 @@ use std::{
     collections::HashSet,
     fmt::Write as FmtWrite,
     fs,
-    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom},
+    io::{BufRead, BufReader, BufWriter},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -494,20 +494,25 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // distinguish "extracted but unknowable" (→ ".") from "no depth source at all" (→ "").
         let tumor_has_depth = tumor_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
         let normal_has_depth = normal_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
-        let fmt_depth = |d: Option<u32>, truncated: bool| -> String {
+        // `no_depth_default`: value to use when a sample column exists in the VCF but has no
+        // depth FORMAT fields (e.g. GT-only). Matches vcf2maf.pl: total depth → "0", counts → ".".
+        // When there is no sample column at all, depth fields are empty (also matches vcf2maf.pl).
+        let fmt_depth = |d: Option<u32>, truncated: bool, no_depth_default: &'static str| -> String {
             if truncated {
                 ".".to_owned()
             } else {
                 d.map(|v| v.to_string()).unwrap_or_else(|| {
                     if tumor_has_depth {
                         ".".to_owned()
+                    } else if tumor_col.is_some() {
+                        no_depth_default.to_owned()
                     } else {
                         String::new()
                     }
                 })
             }
         };
-        let fmt_normal_depth = |d: Option<u32>, truncated: bool| -> String {
+        let fmt_normal_depth = |d: Option<u32>, truncated: bool, no_depth_default: &'static str| -> String {
             if normal_col.is_none() {
                 String::new()
             } else if truncated {
@@ -517,7 +522,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     if normal_has_depth {
                         ".".to_owned()
                     } else {
-                        String::new()
+                        no_depth_default.to_owned()
                     }
                 })
             }
@@ -861,23 +866,27 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             exon_number: transcript.exon.clone(),
             // t_depth/n_depth: always report total depth (from DP) — not affected by AD truncation.
             // vcf2maf.pl suppresses only ref/alt counts when AD is truncated, not total depth.
-            t_depth: fmt_depth(tumor_depth.as_ref().and_then(|d| d.depth()), false),
+            t_depth: fmt_depth(tumor_depth.as_ref().and_then(|d| d.depth()), false, "0"),
             t_ref_count: fmt_depth(
                 tumor_depth.as_ref().and_then(|d| d.ref_count),
                 tumor_ad_truncated || tumor_alt_oor,
+                ".",
             ),
             t_alt_count: fmt_depth(
                 tumor_depth.as_ref().and_then(|d| d.alt_count),
                 tumor_ad_truncated || tumor_alt_oor,
+                ".",
             ),
-            n_depth: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.depth()), false),
+            n_depth: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.depth()), false, "0"),
             n_ref_count: fmt_normal_depth(
                 normal_depth.as_ref().and_then(|d| d.ref_count),
                 normal_ad_truncated || normal_alt_oor,
+                ".",
             ),
             n_alt_count: fmt_normal_depth(
                 normal_depth.as_ref().and_then(|d| d.alt_count),
                 normal_ad_truncated || normal_alt_oor,
+                ".",
             ),
             all_effects,
             vep_allele: transcript.allele.clone(),
@@ -1355,52 +1364,6 @@ fn resolve_sample_col(
     }
 }
 
-/// Look up a single reference base from an indexed FASTA file.
-///
-/// Reads the `.fai` index (same path as fasta + ".fai") to locate the sequence,
-/// then seeks directly to the byte that holds the requested 1-based position.
-/// Tries the chromosome name as given, then with/without "chr" prefix if not found.
 fn fasta_fetch_base(fasta_path: &Path, chrom: &str, pos: u64) -> Option<char> {
-    let fai_path = PathBuf::from(format!("{}.fai", fasta_path.display()));
-    let fai = fs::read_to_string(&fai_path).ok()?;
-
-    let lookup = |name: &str| -> Option<(u64, u64, u64)> {
-        for line in fai.lines() {
-            let cols: Vec<&str> = line.split('\t').collect();
-            if cols.len() >= 5 && cols[0] == name {
-                let offset: u64 = cols[2].parse().ok()?;
-                let bases_per_line: u64 = cols[3].parse().ok()?;
-                let bytes_per_line: u64 = cols[4].parse().ok()?;
-                return Some((offset, bases_per_line, bytes_per_line));
-            }
-        }
-        None
-    };
-
-    let (offset, bases_per_line, bytes_per_line) = lookup(chrom).or_else(|| {
-        // Try toggling the "chr" prefix
-        if let Some(stripped) = chrom.strip_prefix("chr") {
-            lookup(stripped)
-        } else {
-            lookup(&format!("chr{}", chrom))
-        }
-    })?;
-
-    if bases_per_line == 0 || pos == 0 {
-        return None;
-    }
-    let line_num = (pos - 1) / bases_per_line;
-    let col = (pos - 1) % bases_per_line;
-    let byte_pos = offset + line_num * bytes_per_line + col;
-
-    let mut f = fs::File::open(fasta_path).ok()?;
-    f.seek(SeekFrom::Start(byte_pos)).ok()?;
-    let mut buf = [0u8; 1];
-    f.read_exact(&mut buf).ok()?;
-    let c = buf[0] as char;
-    if c.is_ascii_alphabetic() {
-        Some(c.to_ascii_uppercase())
-    } else {
-        None
-    }
+    crate::fasta::fasta_fetch_base(fasta_path, chrom, pos)
 }
