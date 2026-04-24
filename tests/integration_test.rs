@@ -371,10 +371,9 @@ fn vcf2maf_vs_vcf2maf_reference() {
 
 /// Regression: vcf2vcf must count only written variants, not total input records.
 ///
-/// Before the fix, `count` incremented for every record read (including filtered ones),
-/// so the log claimed "wrote 7" when only 4 variants actually passed filters.
-///
-/// Also verifies that non-PASS filters and ref-only (ALT=".") variants are excluded.
+/// Before the fix, `count` incremented for every record read (including filtered ones).
+/// vcf2vcf passes non-PASS variants through (matching vcf2vcf.pl); only ref-only
+/// records (ALT=".") are dropped.
 #[test]
 #[ignore = "requires compiled mafsmith binary; run `cargo build` first"]
 fn vcf2vcf_filters_and_count_correct() {
@@ -401,11 +400,11 @@ fn vcf2vcf_filters_and_count_correct() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    // Log must report 4 written variants (PASS + filter="." ones kept; LOWQ + ref-only filtered)
+    // Log must report 6 written variants (all 7 input records minus the one ref-only ALT=".")
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("wrote 4 variants"),
-        "Expected 'wrote 4 variants' in log, got: {stderr}"
+        stderr.contains("wrote 6 variants"),
+        "Expected 'wrote 6 variants' in log, got: {stderr}"
     );
 
     // Count non-header lines in output VCF
@@ -413,27 +412,15 @@ fn vcf2vcf_filters_and_count_correct() {
     let data_lines: Vec<&str> = content.lines().filter(|l| !l.starts_with('#')).collect();
     assert_eq!(
         data_lines.len(),
-        4,
-        "Output VCF must have exactly 4 data lines, got {}",
+        6,
+        "Output VCF must have exactly 6 data lines, got {}",
         data_lines.len()
     );
 
-    // LOWQ variant at chr1:200000 must be excluded
-    assert!(
-        !content.contains("\t200000\t"),
-        "LOWQ variant at pos 200000 must be filtered out"
-    );
-
-    // ref-only variant at chr1:400000 (ALT=".") must be excluded
+    // ref-only variant at chr1:400000 (ALT=".") must be excluded — the only skip criterion
     assert!(
         !content.contains("\t400000\t"),
         "Ref-only variant at pos 400000 must be filtered out"
-    );
-
-    // LOWQ;DP variant at chr1:600000 must be excluded
-    assert!(
-        !content.contains("\t600000\t"),
-        "LOWQ;DP variant at pos 600000 must be filtered out"
     );
 
     // PASS variant at chr1:100000 must be present
@@ -442,10 +429,22 @@ fn vcf2vcf_filters_and_count_correct() {
         "PASS variant at pos 100000 must be in output"
     );
 
-    // filter="." variant at chr1:500000 must be present (treated as unfiltered)
+    // non-PASS (LOWQ) variant at chr1:200000 must be present — vcf2vcf passes non-PASS through
+    assert!(
+        content.contains("\t200000\t"),
+        "LOWQ variant at pos 200000 must be passed through (vcf2vcf does not filter non-PASS)"
+    );
+
+    // filter="." variant at chr1:500000 must be present
     assert!(
         content.contains("\t500000\t"),
         "filter='.' variant at pos 500000 must be in output"
+    );
+
+    // LOWQ;DP variant at chr1:600000 must be present — vcf2vcf passes non-PASS through
+    assert!(
+        content.contains("\t600000\t"),
+        "LOWQ;DP variant at pos 600000 must be passed through (vcf2vcf does not filter non-PASS)"
     );
 }
 
@@ -514,8 +513,12 @@ fn maf2vcf_has_sample_columns() {
             "Data line {i} must have 11 tab-separated fields (9 VCF + 2 samples), got {}: {line}",
             fields.len()
         );
-        // FORMAT column must be "GT"
-        assert_eq!(fields[8], "GT", "FORMAT field must be 'GT' in line {i}");
+        // FORMAT column must start with "GT" (may be "GT:AD:DP" when MAF has depth columns)
+        assert!(
+            fields[8].starts_with("GT"),
+            "FORMAT field must start with 'GT' in line {i}, got '{}'",
+            fields[8]
+        );
         // Sample GT values must be non-empty
         assert!(
             !fields[9].is_empty(),
@@ -533,33 +536,57 @@ fn maf2vcf_has_sample_columns() {
         .find(|l| l.contains("\t7674220\t"))
         .expect("TP53 row at chr17:7674220 must be present");
     let fields: Vec<&str> = tp53_line.split('\t').collect();
+    // Tumor sample is first value of the GT field (split on ':')
+    let tumor_gt = fields[9].split(':').next().unwrap_or("");
     assert_eq!(
-        fields[9], "1/1",
+        tumor_gt, "1/1",
         "TP53 with TSA1!=REF must have tumor GT=1/1"
     );
 
-    // Deletion: BRCA1 AT>- must produce padded VCF DEL (NAT > N)
+    // Deletion: BRCA1 AT>- must produce anchor-padded VCF DEL (anchor+AT > anchor)
     let brca1_line = data_lines
         .iter()
         .find(|l| l.contains("chr17") && l.contains("\t43082"))
         .expect("BRCA1 deletion row must be present");
     let fields: Vec<&str> = brca1_line.split('\t').collect();
-    assert_eq!(
-        fields[3], "NAT",
-        "BRCA1 deletion REF must be padded to 'NAT'"
+    let brca1_ref = fields[3];
+    let brca1_alt = fields[4];
+    assert!(
+        brca1_ref.ends_with("AT") && brca1_ref.len() == 3,
+        "BRCA1 deletion REF must be anchor+'AT' (3 chars), got '{brca1_ref}'"
     );
-    assert_eq!(fields[4], "N", "BRCA1 deletion ALT must be padded 'N'");
+    assert_eq!(
+        brca1_alt.len(),
+        1,
+        "BRCA1 deletion ALT must be 1-char anchor base, got '{brca1_alt}'"
+    );
+    assert_eq!(
+        &brca1_ref[..1],
+        brca1_alt,
+        "BRCA1 deletion REF and ALT must share the same anchor base"
+    );
 
-    // Insertion: PIK3CA ->GTC must produce padded VCF INS (N > NGTC)
+    // Insertion: PIK3CA ->GTC must produce anchor-padded VCF INS (anchor > anchor+GTC)
     let pik3ca_line = data_lines
         .iter()
         .find(|l| l.contains("chr3"))
         .expect("PIK3CA insertion row must be present");
     let fields: Vec<&str> = pik3ca_line.split('\t').collect();
-    assert_eq!(fields[3], "N", "PIK3CA insertion REF must be padded 'N'");
+    let pik3ca_ref = fields[3];
+    let pik3ca_alt = fields[4];
     assert_eq!(
-        fields[4], "NGTC",
-        "PIK3CA insertion ALT must be padded 'NGTC'"
+        pik3ca_ref.len(),
+        1,
+        "PIK3CA insertion REF must be 1-char anchor base, got '{pik3ca_ref}'"
+    );
+    assert!(
+        pik3ca_alt.ends_with("GTC") && pik3ca_alt.len() == 4,
+        "PIK3CA insertion ALT must be anchor+'GTC' (4 chars), got '{pik3ca_alt}'"
+    );
+    assert_eq!(
+        pik3ca_ref,
+        &pik3ca_alt[..1],
+        "PIK3CA insertion REF and ALT must share the same anchor base"
     );
 }
 
