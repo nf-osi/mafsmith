@@ -543,7 +543,9 @@ def main():
     p.add_argument("--vep-forks",    type=int,  default=16,
                    help="VEP forks for both mafsmith and vcf2maf.pl [default: 16]")
     p.add_argument("--strict",        action="store_true",
-                   help="Pass --strict to mafsmith (match vcf2maf.pl AD-count behavior)")
+                   help="Pass --strict to mafsmith (match vcf2maf.pl AD-count behavior) and "
+                        "exclude Variant_Classification from the diff (transcript-selection "
+                        "differences at gene boundaries are not conversion logic errors)")
     p.add_argument("--inhibit-vep",  action="store_true",
                    help="Skip VEP annotation (mafsmith --skip-annotation / vcf2maf.pl --inhibit-vep); "
                         "Variant_Classification is excluded from the diff")
@@ -679,8 +681,11 @@ def main():
 
         ncbi_build = NCBI_BUILD_BY_GENOME.get(args.genome, "GRCh38")
 
-        # Fields excluded in --inhibit-vep mode because they depend on annotation.
-        cmp_fields = CONVERSION_FIELDS - {"Variant_Classification"} if args.inhibit_vep else CONVERSION_FIELDS
+        # Variant_Classification depends on transcript selection and differs at gene
+        # boundaries regardless of conversion logic correctness; exclude it when
+        # --inhibit-vep (no annotation) or --strict (compare only mechanically
+        # identical conversion fields).
+        cmp_fields = CONVERSION_FIELDS - {"Variant_Classification"} if (args.inhibit_vep or args.strict) else CONVERSION_FIELDS
 
         # --- mafsmith ---
         if args.inhibit_vep:
