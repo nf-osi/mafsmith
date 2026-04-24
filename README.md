@@ -95,7 +95,7 @@ mafsmith vcf2maf -i input.vcf -o output.maf --genome grch37
 
 | Flag | Description |
 |------|-------------|
-| `--genome` | Reference assembly: `grch38` (default), `grch37`, `grcm39` |
+| `--genome` | Reference assembly: `grch38` (default), `grch37`, `grcm39` (mouse, unvalidated) |
 | `--tumor-id` | MAF `Tumor_Sample_Barcode` (defaults to VCF sample column name) |
 | `--normal-id` | MAF `Matched_Norm_Sample_Barcode` |
 | `--vcf-tumor-id` | Sample column name in VCF for tumor |
@@ -219,11 +219,11 @@ Validated to 0 conversion-field differences against `maf2vcf.pl`, `vcf2vcf.pl`, 
 
 ## Supported genomes
 
-| Assembly | Species |
-|----------|---------|
-| GRCh38 | Human (hg38) |
-| GRCh37 | Human (hg19/b37) |
-| GRCm39 | Mouse |
+| Assembly | Species | Validation status |
+|----------|---------|-------------------|
+| GRCh38 | Human (hg38) | Validated (0 diffs across 21 caller types) |
+| GRCh37 | Human (hg19/b37) | Validated (0 diffs across 3 caller types) |
+| GRCm39 | Mouse | Available; not yet validated against vcf2maf.pl |
 
 ## License
 
