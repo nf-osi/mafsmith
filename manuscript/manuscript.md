@@ -191,6 +191,34 @@ Compute cost and carbon emissions were estimated for the conversion-only benchma
 | 100,000 samples | $9,384 | 231 kg | 15,334 hr |
 | 1,000,000 samples | $93,844 | 2,307 kg | 153,340 hr |
 
+For the full annotated pipeline, cost and carbon savings were estimated for each of the five somatic T/N datasets using the same power model, with mafsmith + fastVEP and VEP --vep-forks 16 both at 100% CPU utilisation (113.4 W), and VEP --vep-forks 4 assigned 31.25% CPU utilisation (59.5 W; 5 processes across 16 vCPUs). Savings are shown in Table 8. In the symmetric comparison, mean time savings of 1,686 s per run corresponded to $0.287 in compute cost and 20.5 g CO₂e. In the typical deployment (VEP --vep-forks 4), time savings were greater (mean 2,123 s) but CO₂e savings were lower (mean 13.4 g), because VEP running at 4 forks draws substantially less power per second (59.5 W vs. 113.4 W for 16 forks), reducing the energy differential despite the larger time gap. Per million variants, the annotated pipeline saves approximately 21.8 g CO₂e (symmetric) or 14.4 g CO₂e (typical deployment), compared with 2.3 g CO₂e for the conversion step alone (Table 6), consistent with annotation being the dominant bottleneck.
+
+**Table 8. Full annotated pipeline compute cost and carbon savings per run (mafsmith + fastVEP vs. vcf2maf.pl + VEP 115; c6a.4xlarge, us-east-1).**
+
+*A. Symmetric comparison (vcf2maf.pl + VEP --vep-forks 16; mafsmith + fastVEP 16-core)*
+
+| Dataset | Variants | Time saved (s) | Cost saved | Energy saved (Wh) | CO₂e saved (g) |
+|---------|----------|---------------|-----------|-------------------|---------------|
+| GIAB HG008, MuTect2 | 277,645 | 448 | $0.076 | 14.1 | 5.45 |
+| GIAB HG008, Strelka2 SNV | 1,562,847 | 2,821 | $0.480 | 88.8 | 34.3 |
+| GIAB HG008, Strelka2 INDEL | 293,719 | 602 | $0.102 | 18.9 | 7.31 |
+| SEQC2 HCC1395, MuTect2 | 271,945 | 435 | $0.074 | 13.7 | 5.28 |
+| SEQC2 HCC1395, Strelka | 2,191,720 | 4,126 | $0.701 | 129.9 | 50.2 |
+| **Mean** | | **1,686** | **$0.287** | **53.1** | **20.5** |
+
+*B. Typical deployment (vcf2maf.pl + VEP --vep-forks 4; mafsmith + fastVEP 16-core)*
+
+| Dataset | Variants | Time saved (s) | Cost saved | Energy saved (Wh) | CO₂e saved (g) |
+|---------|----------|---------------|-----------|-------------------|---------------|
+| GIAB HG008, MuTect2 | 277,645 | 571 | $0.097 | 9.3 | 3.58 |
+| GIAB HG008, Strelka2 SNV | 1,562,847 | 3,561 | $0.605 | 58.4 | 22.5 |
+| GIAB HG008, Strelka2 INDEL | 293,719 | 788 | $0.134 | 12.9 | 4.96 |
+| SEQC2 HCC1395, MuTect2 | 271,945 | 556 | $0.094 | 9.0 | 3.48 |
+| SEQC2 HCC1395, Strelka | 2,191,720 | 5,137 | $0.873 | 84.3 | 32.5 |
+| **Mean** | | **2,123** | **$0.361** | **34.8** | **13.4** |
+
+*CO₂e uses EPA eGRID 2022 SRVC carbon intensity (0.386 kg CO₂e/kWh, location-based); power: mafsmith + fastVEP and VEP-16, 113.4 W; VEP-4, 59.5 W.*
+
 ---
 
 ## Discussion
