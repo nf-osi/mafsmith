@@ -1,8 +1,8 @@
 # mafsmith
 
-Fast, self-contained VCF↔MAF converter with embedded variant annotation.
+A complete, fast rewrite of [vcf2maf](https://github.com/mskcc/vcf2maf) in Rust, designed as a drop-in replacement.
 
-mafsmith is a Rust reimplementation of [vcf2maf](https://github.com/mskcc/vcf2maf), using [fastVEP](https://github.com/Ensembl/ensembl-vep) for annotation. All four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, `maf2maf`) have been validated to 0 conversion-field differences against their reference Perl counterparts across 15+ caller types and 6 representative datasets.
+mafsmith reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl and uses [fastVEP](https://github.com/Ensembl/ensembl-vep) for annotation. All four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, `maf2maf`) have been validated to 0 conversion-field differences against their reference Perl counterparts across 15+ caller types and 6 representative datasets.
 
 ## Acknowledgements
 
@@ -189,7 +189,8 @@ Validated to 0 conversion-field mismatches in `--strict` mode against `vcf2maf.p
 | GIAB germline benchmarks (HG001–HG007) | Multi-caller consensus (`ADALL` field) | NIST v4.2.1 |
 | ICGC PCAWG consensus SNV/MNV | Consensus VCF (depth in INFO, no FORMAT), GRCh37 | 1,902 samples |
 | DepMap CCLE WGS | GATK MuTect2 single-sample, hg38 | 802 samples |
-| COSMIC v103 | Annotation database VCF (no sample columns) | COSMIC |
+| COSMIC v103 (GenomeScreensMutant) | Aggregate somatic mutations from genome-wide cancer screens (no sample columns) | COSMIC |
+| COSMIC v103 (NonCodingVariants) | Aggregate non-coding somatic variants (no sample columns) | COSMIC |
 
 When run with the same Ensembl VEP 112 annotation cache, mafsmith produces 0 conversion differences versus `vcf2maf.pl` across 23 representative datasets (GRCh38 and GRCh37).
 
