@@ -1,11 +1,17 @@
-# mafsmith: a Rust reimplementation of vcf2maf
-
-Robert Allaway^1^
-
-^1^ Sage Bionetworks, Seattle, WA, USA
-
-**Corresponding author:** robert.allaway@sagebionetworks.org
-
+---
+title: "mafsmith: a Rust reimplementation of vcf2maf"
+author:
+  - name: Robert Allaway
+    affiliation: 1
+affiliations:
+  - id: 1
+    name: Sage Bionetworks, Seattle, WA, USA
+corresponding-author: "robert.allaway@sagebionetworks.org"
+bibliography: references.bib
+link-citations: true
+csl: https://www.zotero.org/styles/nature
+nocite: |
+  @MuTect2, @Strelka2, @FreeBayes, @DRAGEN, @Manta, @TCGA
 ---
 
 ## Abstract
@@ -16,11 +22,11 @@ The Mutation Annotation Format (MAF) is a standard interchange format for somati
 
 ## Introduction
 
-Somatic variant calling produces VCF files whose downstream use in cancer genomics almost universally requires conversion to the Mutation Annotation Format (MAF). MAF is the primary data model for the NCI Genomic Data Commons (GDC) [CITATION: GDC] and is consumed by widely used analytical tools including maftools [CITATION: maftools], cBioPortal [CITATION: cBioPortal], and OncoKB [CITATION: OncoKB]. The conversion from VCF to MAF is non-trivial: it requires functional annotation of each variant against a transcript database, selection of a canonical or preferred transcript, normalisation of multi-allelic and indel representations, and mapping of genotype information to allele-level MAF fields.
+Somatic variant calling produces VCF files whose downstream use in cancer genomics almost universally requires conversion to the Mutation Annotation Format (MAF). MAF is the primary data model for the NCI Genomic Data Commons (GDC) [@GDC] and is consumed by widely used analytical tools including maftools [@maftools], cBioPortal [@cBioPortal], and OncoKB [@OncoKB]. The conversion from VCF to MAF is non-trivial: it requires functional annotation of each variant against a transcript database, selection of a canonical or preferred transcript, normalisation of multi-allelic and indel representations, and mapping of genotype information to allele-level MAF fields.
 
-The standard tool for this conversion is vcf2maf [CITATION: vcf2maf]. vcf2maf is a Perl script that wraps the Ensembl Variant Effect Predictor (VEP) [CITATION: VEP], handling the full complexity of VCF allele representations, multi-allelic sites, structural variants, and caller-specific FORMAT field conventions that have accumulated over years of production use across major cancer genomics consortia. Its breadth of supported vcf versions and spec-non-conformant files make it the reference implementation.
+The standard tool for this conversion is vcf2maf [@vcf2maf]. vcf2maf is a Perl script that wraps the Ensembl Variant Effect Predictor (VEP) [@VEP], handling the full complexity of VCF allele representations, multi-allelic sites, structural variants, and caller-specific FORMAT field conventions that have accumulated over years of production use across major cancer genomics consortia. Its breadth of supported vcf versions and spec-non-conformant files make it the reference implementation.
 
-However, vcf2maf has performance limitations, described further in the results section. For large cohorts of hundreds or thousands of samples, this becomes a major computational burden. The dependency on a compatible Perl + VEP + reference database stack can also create significant installation challenges. Recent development of fastVEP [Huang, 2026], a reimplementation of VEP's core annotation logic in the Rust programming language, substantially reduces annotation time, achieving up to 130-fold speedup over the original Perl VEP while maintaining complete concordance. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.
+However, vcf2maf has performance limitations, described further in the results section. For large cohorts of hundreds or thousands of samples, this becomes a major computational burden. The dependency on a compatible Perl + VEP + reference database stack can also create significant installation challenges. Recent development of fastVEP [@Huang2026], a reimplementation of VEP's core annotation logic in the Rust programming language, substantially reduces annotation time, achieving up to 130-fold speedup over the original Perl VEP while maintaining complete concordance. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.
 
 Here we describe mafsmith, a complete rewrite of vcf2maf in Rust that pairs naturally with fastVEP to replace the entire vcf2maf + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics and native parallelism to achieve throughput that is not possuble with the standard implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf from first principles, targeting field-for-field identical output. We validate all four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, and `maf2maf`) against their reference Perl counterparts, demonstrate 79.4-fold speedup for the `vcf2maf` conversion step, and describe the specific edge cases and caller-specific conventions that required careful evaluation to achieve full concordance.
 
@@ -48,7 +54,7 @@ The `vcf2vcf` subcommand normalises a VCF: it passes through all FORMAT fields i
 
 ### Annotation
 
-When annotation is required, mafsmith invokes fastVEP [Huang, 2026] with HGVS notation enabled. fastVEP produces a standard VCF with `CSQ` INFO fields using the same format as Ensembl VEP, allowing mafsmith to reuse the same downstream parsing logic regardless of whether annotation was performed upstream. For pre-annotated VCFs, annotation can be skipped with `--skip-annotation`. mafsmith is also compatible with the standard Ensembl VEP Perl implementation: users who prefer or require VEP can run it independently and pass the resulting annotated VCF to mafsmith with `--skip-annotation`.
+When annotation is required, mafsmith invokes fastVEP [@Huang2026] with HGVS notation enabled. fastVEP produces a standard VCF with `CSQ` INFO fields using the same format as Ensembl VEP, allowing mafsmith to reuse the same downstream parsing logic regardless of whether annotation was performed upstream. For pre-annotated VCFs, annotation can be skipped with `--skip-annotation`. mafsmith is also compatible with the standard Ensembl VEP Perl implementation: users who prefer or require VEP can run it independently and pass the resulting annotated VCF to mafsmith with `--skip-annotation`.
 
 ### Transcript selection
 
@@ -70,7 +76,7 @@ mafsmith implements vcf2maf logic for determining `Tumor_Seq_Allele1` and `Tumor
 
 ### Parallelism and performance
 
-The conversion step (post-annotation) uses Rayon [CITATION: Rayon] for parallel processing and jemalloc [CITATION: jemalloc] for improved throughput on multi-threaded runs. CSQ field parsing is lazy (deferred until a record is selected for output), reducing unnecessary work for filtered or dropped records.
+The conversion step (post-annotation) uses Rayon [@Rayon] for parallel processing and jemalloc [@jemalloc] for improved throughput on multi-threaded runs. CSQ field parsing is lazy (deferred until a record is selected for output), reducing unnecessary work for filtered or dropped records.
 
 ---
 
@@ -269,32 +275,16 @@ This work was supported in part by API credits from Anthropic's AI for Science p
 
 ## References
 
-[CITATION: vcf2maf] Kandoth C. mskcc/vcf2maf. GitHub. https://github.com/mskcc/vcf2maf
+::: {#refs}
+:::
 
-[CITATION: VEP] McLaren W, Gil L, Hunt SE, Riat HS, Ritchie GR, Thormann A, Flicek P, Cunningham F. The Ensembl Variant Effect Predictor. *Genome Biol.* 2016;17(1):122. https://doi.org/10.1186/s13059-016-0974-4
+<!--
+Citations are managed in references.bib and rendered automatically by
+pandoc --citeproc. To force-include uncited entries (e.g. TCGA, DRAGEN,
+MuTect2, Strelka2, FreeBayes, Manta) in the output bibliography, add a
+`nocite` field to the YAML front matter, e.g.:
 
-[Huang, 2026] Huang K. fastVEP: A Fast, Comprehensive Variant Effect Predictor Written in Rust. *bioRxiv.* 2026. https://doi.org/10.64898/2026.04.14.718452
+  nocite: |
+    @TCGA, @DRAGEN, @MuTect2, @Strelka2, @FreeBayes, @Manta
+-->
 
-[CITATION: GDC] Jensen MA, Ferretti V, Grossman RL, Staudt LM. The NCI Genomic Data Commons as an engine for precision medicine. *Blood.* 2017;130(4):453–459. https://doi.org/10.1182/blood-2017-03-735654
-
-[CITATION: maftools] Mayakonda A, Lin DC, Assenov Y, Plass C, Koeffler HP. Maftools: efficient and comprehensive analysis of somatic variants in cancer. *Genome Res.* 2018;28(11):1747–1756. https://doi.org/10.1101/gr.239244.118
-
-[CITATION: cBioPortal] Cerami E, Gao J, Dogrusoz U, Gross BE, Sumer SO, Aksoy BA, Jacobsen A, Byrne CJ, Heuer ML, Larsson E, Antipin Y, Reva B, Goldberg AP, Sander C, Schultz N. The cBio cancer genomics portal: an open platform for exploring multidimensional cancer genomics data. *Cancer Discov.* 2012;2(5):401–404. https://doi.org/10.1158/2159-8290.CD-12-0095
-
-[CITATION: OncoKB] Chakravarty D, Gao J, Phillips SM, et al. OncoKB: A Precision Oncology Knowledge Base. *JCO Precis Oncol.* 2017;1:1–16. https://doi.org/10.1200/PO.17.00011
-
-[CITATION: MuTect2] Benjamin D, Sato T, Cibulskis K, Getz G, Stewart C, Lichtenstein L. Calling Somatic SNVs and Indels with Mutect2. *bioRxiv.* 2019. https://doi.org/10.1101/861054
-
-[CITATION: Strelka2] Kim S, Scheffler K, Halpern AL, Bekritsky MA, Noh E, Källberg M, Chen X, Kim Y, Beyter D, Krusche P, Saunders CT. Strelka2: fast and accurate calling of germline and somatic variants. *Nat Methods.* 2018;15(8):591–594. https://doi.org/10.1038/s41592-018-0051-x
-
-[CITATION: FreeBayes] Garrison E, Marth G. Haplotype-based variant detection from short-read sequencing. *arXiv.* 2012. https://arxiv.org/abs/1207.3907
-
-[CITATION: DRAGEN] Illumina DRAGEN Bio-IT Platform. https://www.illumina.com/products/by-type/informatics-products/dragen-bio-it-platform.html
-
-[CITATION: Manta] Chen X, Schulz-Trieglaff O, Shaw R, Barnes B, Schlesinger F, Källberg M, Cox AJ, Kruglyak S, Saunders CT. Manta: rapid detection of structural variants and indels for germline and cancer sequencing applications. *Bioinformatics.* 2016;32(8):1220–1222. https://doi.org/10.1093/bioinformatics/btv710
-
-[CITATION: Rayon] Matsakis N. Rayon: A data parallelism library for Rust. https://github.com/rayon-rs/rayon
-
-[CITATION: jemalloc] Evans J. A Scalable Concurrent malloc(3) Implementation for FreeBSD. *BSDCan.* 2006. https://people.freebsd.org/~jasone/jemalloc/bsdcan2006/jemalloc.pdf
-
-[CITATION: TCGA] Cancer Genome Atlas Research Network, Weinstein JN, Collisson EA, et al. The Cancer Genome Atlas Pan-Cancer analysis project. *Nat Genet.* 2013;45(10):1113–1120. https://doi.org/10.1038/ng.2764

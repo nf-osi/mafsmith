@@ -9,3 +9,6 @@ tests/fixtures/expected/*_vcf2maf.maf
 *.fa
 *.fa.fai
 *.fa.gz
+
+# Pandoc build output
+manuscript/build/
