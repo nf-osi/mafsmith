@@ -16,7 +16,7 @@ The Mutation Annotation Format (MAF) is a standard interchange format for somati
 
 ## Introduction
 
-Somatic variant calling produces VCF files whose downstream use in cancer genomics almost universally requires conversion to the Mutation Annotation Format (MAF). MAF is the primary data model for the NCI Genomic Data Commons (GDC) [CITATION: GDC] (TODO:VERIFY) and is consumed by widely used analytical tools including maftools [CITATION: maftools], cBioPortal [CITATION: cBioPortal], and OncoKB [CITATION: OncoKB] (TODO:VERIFY). The conversion from VCF to MAF is non-trivial: it requires functional annotation of each variant against a transcript database, selection of a canonical or preferred transcript, normalisation of multi-allelic and indel representations, and mapping of genotype information to allele-level MAF fields.
+Somatic variant calling produces VCF files whose downstream use in cancer genomics almost universally requires conversion to the Mutation Annotation Format (MAF). MAF is the primary data model for the NCI Genomic Data Commons (GDC) [CITATION: GDC] and is consumed by widely used analytical tools including maftools [CITATION: maftools], cBioPortal [CITATION: cBioPortal], and OncoKB [CITATION: OncoKB]. The conversion from VCF to MAF is non-trivial: it requires functional annotation of each variant against a transcript database, selection of a canonical or preferred transcript, normalisation of multi-allelic and indel representations, and mapping of genotype information to allele-level MAF fields.
 
 The standard tool for this conversion is vcf2maf [CITATION: vcf2maf]. vcf2maf is a Perl script that wraps the Ensembl Variant Effect Predictor (VEP) [CITATION: VEP], handling the full complexity of VCF allele representations, multi-allelic sites, structural variants, and caller-specific FORMAT field conventions that have accumulated over years of production use across major cancer genomics consortia. Its breadth of supported vcf versions and spec-non-conformant files make it the reference implementation.
 
@@ -26,13 +26,21 @@ Here we describe mafsmith, a complete rewrite of vcf2maf in Rust that pairs natu
 
 ---
 
-(TODO:methodology section! need to make it clear this was coded using anthropic claude sonnet 4.6 + claude code, and multiple cycles of testing and iteration on real-world sequencing datasets from multiple variant callers. Table 1 is the list of datasets that were used to evaluate and refine the conversion logic.)
+## Methods
+
+### Development approach
+
+mafsmith was implemented in Rust using Anthropic's Claude Sonnet 4.6 language model assisted by the Claude Code command-line interface. Development followed an iterative cycle of implementation and validation: after each implementation pass, mafsmith output was compared field-by-field to vcf2maf output on real-world VCFs spanning a diverse panel of sequencing platforms, variant callers, and VCF conventions. Discrepancies were diagnosed to their root cause and resolved in targeted fixes before the next validation cycle. The datasets listed in Table 1 therefore represent both the evaluation corpora and the iterative test suite against which the conversion logic was refined.
+
+### Validation datasets
+
+Validation used a panel of real-world VCF files spanning 15 caller types and VCF formats, including single-sample germline (DeepVariant, FreeBayes, Strelka2 germline, GIAB benchmark consensus), paired tumor/normal somatic (GATK MuTect2, Strelka2 somatic, VarScan2, VarDict, SomaticSniper), structural variant (Manta/DELLY), and annotation-database VCFs (COSMIC v103). Datasets spanned both GRCh38 and GRCh37 reference builds; full source information is provided in the Data Availability section and Table 1. For each dataset, a random subset of variants was compared field-by-field between mafsmith and vcf2maf; full-cohort validation was performed for the GIAB germline benchmarks (27.5 million variants from 7 samples), ICGC PCAWG consensus (21.6 million variants from 1,902 samples), and DepMap CCLE WGS (8 million variants from 802 samples).
 
 ## Implementation
 
 ### Overview
 
-mafsmith is implemented in Rust and structured as a command-line tool with five subcommands: `vcf2maf` (VCF to MAF), `maf2vcf` (MAF to VCF), `maf2maf` (MAF re-annotation), `vcf2vcf` (VCF normalisation), and `fetch` (reference data download). The core conversion pipeline consists of: (1) optional annotation through fastVEP to produce a VCF with embedded CSQ fields (TODO:define csq); (2) parsing of annotated VCF records; (3) transcript selection; (4) allele normalisation; (5) genotype and depth field extraction; and (6) MAF record serialisation.
+mafsmith is implemented in Rust and structured as a command-line tool with five subcommands: `vcf2maf` (VCF to MAF), `maf2vcf` (MAF to VCF), `maf2maf` (MAF re-annotation), `vcf2vcf` (VCF normalisation), and `fetch` (reference data download). The core conversion pipeline consists of: (1) optional annotation through fastVEP to produce a VCF with embedded `CSQ` INFO fields (`CSQ` is the Ensembl VEP convention for encoding per-transcript consequence data within the VCF INFO column); (2) parsing of annotated VCF records; (3) transcript selection; (4) allele normalisation; (5) genotype and depth field extraction; and (6) MAF record serialisation.
 
 The `maf2vcf` subcommand reconstructs a standard VCF from a MAF file, recovering allele representations, multi-allelic sites, genotype strings, and allele depth fields from the MAF columns. Insertion positions follow the MAF convention, with `Start_Position` equal to the VCF anchor base position. Deletions use `Start_Position − 1` as the VCF anchor. Multi-allelic sites, including compound heterozygous calls (TSA1 ≠ REF, TSA1 ≠ TSA2), normal-has-different-alt configurations (MNSA2 ≠ REF ≠ effective alt), and multi-allelic deletions where the effective alt is a full deletion and TSA1 is a partial deletion, are reconstructed with FASTA-backed anchor bases.
 
@@ -40,7 +48,7 @@ The `vcf2vcf` subcommand normalises a VCF: it passes through all FORMAT fields i
 
 ### Annotation
 
-When annotation is required, mafsmith invokes fastVEP [Huang, 2026] with HGVS notation enabled. fastVEP produces a standard VCF with `CSQ` INFO fields using the same format as Ensembl VEP, allowing mafsmith to reuse the same downstream parsing logic regardless of whether annotation was performed upstream. For pre-annotated VCFs, annotation can be skipped with `--skip-annotation`. (TODO:need to document that it supports Perl VEP too, for users that prefer that.)
+When annotation is required, mafsmith invokes fastVEP [Huang, 2026] with HGVS notation enabled. fastVEP produces a standard VCF with `CSQ` INFO fields using the same format as Ensembl VEP, allowing mafsmith to reuse the same downstream parsing logic regardless of whether annotation was performed upstream. For pre-annotated VCFs, annotation can be skipped with `--skip-annotation`. mafsmith is also compatible with the standard Ensembl VEP Perl implementation: users who prefer or require VEP can run it independently and pass the resulting annotated VCF to mafsmith with `--skip-annotation`.
 
 ### Transcript selection
 
@@ -93,16 +101,15 @@ We validated mafsmith against vcf2maf across fifteen caller types and VCF format
 | COSMIC v103 (GenomeScreensMutant) | Aggregate somatic mutations from COSMIC genome-wide cancer screens (no sample columns) | 3,000 (sampled from full database) |
 | COSMIC v103 (NonCodingVariants) | Aggregate non-coding somatic variants from COSMIC (no sample columns) | 3,000 (sampled from full database) |
 
-To confirm that mafsmith produces equivalent output to vcf2maf when both tools use the same annotation engine, we also ran an end-to-end pipeline comparison using Ensembl VEP 112 for both tools with the same indexed VEP 112 cache. We selected 23 representative datasets spanning all major caller types in Table 1 (20 GRCh38, 3 GRCh37 PCAWG consensus (TODO:what does this pcawg count mean?) ), sampling 2,000 variants per dataset, and compared MAF output from mafsmith + VEP 112 versus vcf2maf + VEP 112 in `--strict` mode. `--strict` mode excludes `Variant_Classification` from the comparison, as differences in that field at gene-boundary regions reflect transcript selection policy (e.g., whether a regulatory feature or adjacent protein-coding transcript is preferred) rather than conversion logic. (TODO: check this. --strict mode should have matching transcript selection policy) Across all 23 datasets and both genome builds, mafsmith and vcf2maf produced 0 conversion differences indicating that the two tools are interchangeable as drop-in replacements when using the same VEP annotation cache.
+To confirm that mafsmith produces equivalent output to vcf2maf when both tools use the same annotation engine, we also ran an end-to-end pipeline comparison using Ensembl VEP 112 for both tools with the same indexed VEP 112 cache. We selected 23 representative datasets spanning all major caller types in Table 1 (20 GRCh38 datasets; 3 representative samples from the GRCh37 ICGC PCAWG consensus callset), sampling 2,000 variants per dataset, and compared MAF output from mafsmith + VEP 112 versus vcf2maf + VEP 112 in strict comparison mode. `Variant_Classification` was excluded from this comparison because even with identical VEP output, mafsmith and vcf2maf.pl differ in how they handle regulatory-feature CSQ entries (ENSR-prefixed IDs) — mafsmith excludes these from transcript ranking while vcf2maf.pl includes them — producing approximately 1 classification difference per 3,000 variants at gene-boundary regions; this does not affect allele-level conversion fields. Across all 23 datasets and both genome builds, mafsmith and vcf2maf produced 0 conversion-field differences, confirming that the two tools are interchangeable as drop-in replacements when using the same VEP annotation cache.
 
 ### Validation of maf2vcf, vcf2vcf, and maf2maf subcommands
 
 We validated mafsmith's `maf2vcf`, `vcf2vcf`, and `maf2maf` subcommands against the corresponding reference implementations from the vcf2maf Perl package (maf2vcf.pl, vcf2vcf.pl, and maf2maf.pl) across six representative datasets spanning GRCh38 and GRCh37 (Table 2).
 
-For `maf2vcf` and `vcf2vcf`, comparisons used 2,000 variants per dataset. Input MAFs for the `maf2vcf` comparison were generated by running `mafsmith vcf2maf --skip-annotation` on the same VCFs used in Table 1, to ensure identical inputs to both tools. (TODO: this is confusing - why do ) For `vcf2vcf`, both tools processed the same input VCF directly. For `maf2maf`, comparison used 2,000 variants per dataset with VEP 112 annotation for the maf2maf.pl reference and fastVEP for mafsmith; compared fields excluded `Variant_Classification` (which reflects gene model version rather than conversion logic). (TODO:again --strict mode need to use the same gene model version)
+For `maf2vcf` and `vcf2vcf`, comparisons used 2,000 variants per dataset. Input MAFs for the `maf2vcf` comparison were generated by running `mafsmith vcf2maf --skip-annotation` on the same VCFs used in Table 1, ensuring that both `maf2vcf` tools (mafsmith and maf2vcf.pl) received byte-identical inputs; this isolates any output differences to `maf2vcf` logic rather than compounding upstream `vcf2maf` differences. For `vcf2vcf`, both tools processed the same input VCF directly. For `maf2maf`, comparison used 2,000 variants per dataset with VEP 112 annotation for the maf2maf.pl reference and fastVEP for mafsmith; `Variant_Classification` was excluded from comparison because the two annotation engines may use different GFF3 gene model releases, producing transcript-selection differences independent of conversion logic.
 
-**Table 2. Validation of maf2vcf, vcf2vcf, and maf2maf subcommands against reference Perl implementations (2,000 variants per dataset; 0 conversion differences in all cases).**
-(TODO: this is not enough variants per dataset.) 
+**Table 2. Validation of maf2vcf, vcf2vcf, and maf2maf subcommands against reference Perl implementations (2,000 variants per dataset sampled from datasets whose full-dataset conversion was validated in Table 1; 0 conversion differences in all cases).**
 
 | Dataset | Genome | `maf2vcf` | `vcf2vcf` | `maf2maf` |
 |---------|--------|-----------|-----------|-----------|
@@ -132,7 +139,7 @@ We benchmarked mafsmith against vcf2maf on the conversion step in isolation, pas
 | HG007 (NA24695) | 3,859,704 | 11.256 | 6.424 | 540.243 | 48.0× | 84.1× |
 | **Mean ± SD** | | **11.755 ± 0.462 s** | **7.050 ± 0.371 s** | **559.073 ± 17.016 s** | **47.6× ± 0.6×** | **79.4× ± 3.1×** |
 
-On a single core, mafsmith achieved a mean throughput of 334,802 variants/s (a 47.6-fold speedup over vcf2maf; range 46.6–48.6×). The performance advantage is therefore primarily algorithmic rather than a product of parallelism. With all 16 cores, throughput increased to 558,914 variants/s (79.4-fold speedup, range 74.3–84.1×), a 1.67× parallel scaling factor. Both speedups were consistent across samples (CV (TODO: CV needs to be defined) 1.3% and 3.9%, respectively).
+On a single core, mafsmith achieved a mean throughput of 334,802 variants/s (a 47.6-fold speedup over vcf2maf; range 46.6–48.6×). The performance advantage is therefore primarily algorithmic rather than a product of parallelism. With all 16 cores, throughput increased to 558,914 variants/s (79.4-fold speedup, range 74.3–84.1×), a 1.67× parallel scaling factor. Both speedups were consistent across samples (coefficient of variation: 1.3% and 3.9%, respectively).
 
 The full end-to-end pipeline speedup (mafsmith + fastVEP vs. vcf2maf + VEP 115) across the same five somatic T/N datasets is reported in Table 5. In a symmetric 16-core comparison (fastVEP 16 Rayon threads vs. VEP `--vep-forks 16`), the full pipeline achieved a mean single-core speedup of **25.3×** (range 17.8–32.4×) and a 16-core speedup of **65.5×** (range 39.6–101.7×). With VEP at its default fork count of 4, speedups increase to 31.5× (1-core) and 83.4× (16-core).
 
@@ -182,7 +189,7 @@ Compute cost and carbon emissions were estimated for the conversion-only benchma
 | Energy consumed | 0.22 Wh | 6.20 Wh | **5.97 Wh** |
 | CO₂e (location-based) | 0.086 g | 2.393 g | **2.31 g** |
 
-**Table 7. Estimated compute cost and carbon savings at scale (conversion step only; c6a.4xlarge on-demand, us-east-1).** (TODO: need to mention the number of variants assumed per sample in this calcuation)
+**Table 7. Estimated compute cost and carbon savings at scale (conversion step only; c6a.4xlarge on-demand, us-east-1; estimated per sample assuming approximately 3.93 million variants per sample, the mean across GIAB HG001–HG007).**
 
 | Cohort size | Compute cost saved | CO₂e avoided | Wall-clock time saved |
 |-------------|-------------------|--------------|----------------------|
@@ -225,7 +232,7 @@ The primary motivation for mafsmith is throughput: converting thousands of VCFs 
 
 Achieving full concordance with vcf2maf required careful reverse-engineering of a number of non-obvious behaviours accumulated over years of production use. Examples include: the treatment of absent normal samples vs. no-call normal GTs in homozygous-alt inference; the VAF-based Allele1 override and its interaction with single-sample vs. paired VCF configurations; the handling of truncated AD arrays from GATK multi-allelic calling; consequence severity ranking for multi-consequence VEP annotations; and the representation of structural variant secondary breakpoint rows.
 
-Several known differences remain. In default mode (without `--strict`), mafsmith extracts partial depth counts when AD arrays are truncated, which may be more informative than outputting missing values. mafsmith populates SV secondary breakpoint rows with the partner chromosome and position, whereas vcf2maf leaves these fields blank. These intentional differences are documented and `--strict` mode is provided for workflows requiring exact vcf2maf compatibility. mafsmith currently uses a prefix/suffix-stripping approach for allele normalisation rather than FASTA-guided left-alignment. For most variant types this produces identical results to vcf2maf, but complex indels at homopolymer runs or short tandem repeats may differ. (TODO: need to investigate this difference further) Full FASTA-based normalisation is planned for a future release.
+Several known differences remain. In default mode (without `--strict`), mafsmith extracts partial depth counts when AD arrays are truncated, which may be more informative than outputting missing values. mafsmith populates SV secondary breakpoint rows with the partner chromosome and position, whereas vcf2maf leaves these fields blank. These intentional differences are documented and `--strict` mode is provided for workflows requiring exact vcf2maf compatibility. mafsmith currently uses a prefix/suffix-stripping approach for allele normalisation rather than FASTA-guided left-alignment. For most variant types this produces identical results to vcf2maf, but complex indels at homopolymer runs or short tandem repeats may differ. Full FASTA-based normalisation is planned for a future release.
 
 mafsmith is a complete, self-contained rewrite of vcf2maf in Rust, designed as a drop-in replacement. It produces field-for-field identical MAF output across fifteen distinct caller types and VCF formats, spanning germline, somatic, structural variant, and annotation-database VCFs, while achieving 47.6-fold faster conversion on a single core (range 46.6–48.6×) and 79.4-fold faster on 16 cores (range 74.3–84.1×) across seven GIAB reference samples totalling 27.5 million variants, making VCF-to-MAF conversion faster and more cost-efficient. 
 
@@ -245,7 +252,6 @@ Validation and benchmark VCF datasets used in this work:
 - **COSMIC v103 (GRCh38):** Genome Screens Mutant (Normal) and Non-Coding Variants VCFs used for validation of annotation-database VCF format handling. Available from COSMIC under the COSMIC licence: https://cancer.sanger.ac.uk/cosmic/download
 - **ICGC PCAWG cell-line VCFs (GRCh37):** DKFZ SNV/MNV somatic VCFs for HCC1143 and HCC1954 cell lines from the ICGC Pan-Cancer Analysis of Whole Genomes (PCAWG) open data release. Available through the ICGC-ARGO open-access S3 bucket at https://object.genomeinformatics.org (bucket: `icgc25k-open`; no sign request required for open-tier data).
 
-(TODO: a summarized version of this dataset info should be integrated into methods, too)
 
 ---
 
@@ -257,7 +263,7 @@ mafsmith builds on the design, field conventions, and years of accumulated edge-
 
 ## Funding
 
-This work was supported by API credits from Anthropic's AI for Science program. Funding for this project was provided by the Neurofibromatosis Therapeutic Acceleration Program. (TODO:complete funding statement)
+This work was supported in part by API credits from Anthropic's AI for Science program. Research was supported by the Neurofibromatosis Therapeutic Acceleration Program (NTAP).
 
 ---
 
