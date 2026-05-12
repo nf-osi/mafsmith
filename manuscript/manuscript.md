@@ -101,16 +101,16 @@ We validated mafsmith against vcf2maf across fifteen caller types and VCF format
 
 | Caller | Source | Variants compared |
 |--------|--------|-------------------|
-| DeepVariant 1.2.0 [@DeepVariant] | syn31624545 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn31624545 --> | 2,936,426 |
-| GATK MuTect2 (single-sample) [@MuTect2] | syn31624525 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn31624525 --> | 751,548 |
+| DeepVariant 1.2.0 [@DeepVariant] | syn31624545 [@NFDataPortal; @NFSteensmaCNF] | 2,936,426 |
+| GATK MuTect2 (single-sample) [@MuTect2] | syn31624525 [@NFDataPortal; @NFSteensmaCNF] | 751,548 |
 | GATK MuTect2 (paired T/N) [@MuTect2] | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 549,590 variants from 2 samples |
-| FreeBayes [@FreeBayes] | syn31624535 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn31624535 --> | 2,858,303 |
-| Strelka2 germline [@Strelka2] | syn31624939; syn31624637 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing these syns --> | 9,327,717 variants from 2 samples |
+| FreeBayes [@FreeBayes] | syn31624535 [@NFDataPortal; @NFSteensmaCNF] | 2,858,303 |
+| Strelka2 germline [@Strelka2] | syn31624939; syn31624637 [@NFDataPortal; @NFSteensmaCNF] | 9,327,717 variants from 2 samples |
 | Strelka2 somatic SNVs [@Strelka2] | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 3,754,567 variants from 2 samples |
-| Strelka2 somatic indels [@Strelka2] | syn68172710 [@NFDataPortal]; GIAB HG008 [@GIABv4] <!-- TODO: cite specific NF studies contributing syn68172710 --> | 317,094 variants from 2 samples |
-| SV callers (Manta [@Manta] / DELLY [@DELLY]) | syn21296193 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn21296193 --> | 398 (all SVs) |
-| VarScan2 somatic [@VarScan2] | syn6840402 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn6840402 --> | 59,618 |
-| VarDict (paired T/N) [@VarDict] | syn6039268 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn6039268 --> | 9,303,064 |
+| Strelka2 somatic indels [@Strelka2] | syn68172710 [@NFDataPortal; @NFLaRosaCNFResource]; GIAB HG008 [@GIABv4] | 317,094 variants from 2 samples |
+| SV callers (Manta [@Manta] / DELLY [@DELLY]) | syn21296193 [@NFDataPortal; @NFHirbeMPNST] | 398 (all SVs) |
+| VarScan2 somatic [@VarScan2] | syn6840402 [@NFDataPortal; @NFLaRosaCNFResource] | 59,618 |
+| VarDict (paired T/N) [@VarDict] | syn6039268 [@NFDataPortal; @NFLaRosaCNFResource] | 9,303,064 |
 | SomaticSniper [@SomaticSniper] | SEQC2 HCC1395 [@SEQC2HCC1395] | 164,704 |
 | GIAB germline benchmarks | HG001–HG007 (NIST v4.2.1) [@GIABv4] | 27,529,001 variants from 7 samples |
 | ICGC PCAWG consensus (SNV/MNV) | ICGC PCAWG open data (GRCh37) [@PCAWG] | 21,628,933 variants from 1,902 samples |
@@ -261,7 +261,7 @@ Validation VCF datasets are available from the sources listed below.
 
 Validation and benchmark VCF datasets used in this work:
 
-- **NF Data Portal** [@NFDataPortal] Validation VCF files from multiple callers (syn31624545, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637). Available at [nf.synapse.org](https://nf.synapse.org). <!-- TODO: cite the specific NF studies that contributed each cohort -->
+- **NF Data Portal** [@NFDataPortal] Validation VCF files contributed by three studies: a preclinical NF1-MPNST platform study [@NFHirbeMPNST] (syn21296193), a cutaneous-neurofibroma mechanism study [@NFSteensmaCNF] (syn31624525, syn31624535, syn31624545, syn31624637, syn31624939), and the Cutaneous Neurofibroma Data Resource [@NFLaRosaCNFResource] (syn6039268, syn68172710, syn6840402). Available at [nf.synapse.org](https://nf.synapse.org).
 - **GIAB HG008 somatic (NYGC pipeline, GRCh38)** [@GIABv4]**:** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available from the [GIAB HG008 NYGC-somatic-pipeline FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/).
 - **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38)** [@SEQC2HCC1395]**:** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available from the [SEQC2 Somatic Mutation WG FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/).
 - **COLO829 somatic SV truth set (hg38)** [@COLO829]**:** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Available on [Zenodo record 7515830](https://zenodo.org/records/7515830).
