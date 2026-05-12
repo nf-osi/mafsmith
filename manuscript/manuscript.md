@@ -282,7 +282,7 @@ Validation and benchmark VCF datasets used in this work:
 
 ## Acknowledgements
 
-mafsmith builds on the design, field conventions, and years of accumulated edge-case handling embodied in vcf2maf. We are grateful to Cyriac Kandoth ([0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)) and other vcf2maf contributors for their sustained work developing and maintaining vcf2maf without which this rewrite would not have been possible. This article was drafted with the assistance of large language models (Anthropic Claude Sonnet 4.6 / Opus 4.7), with the author reviewing, editing, and verifying all content.
+mafsmith builds on the design, field conventions, and years of accumulated edge-case handling embodied in vcf2maf. We are grateful to Cyriac Kandoth and other vcf2maf contributors for their sustained work developing and maintaining vcf2maf without which this rewrite would not have been possible. This article was drafted with the assistance of large language models (Anthropic Claude Sonnet 4.6), with the author reviewing, editing, and verifying all content.
 
 ---
 
