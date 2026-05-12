@@ -228,8 +228,6 @@ For the full annotated pipeline, mean time savings of 1,686 s per run correspond
 | SEQC2 HCC1395, MuTect2 | 271,945 | 435 | $0.074 | 13.7 | 5.28 |
 | SEQC2 HCC1395, Strelka | 2,191,720 | 4,126 | $0.701 | 129.9 | 50.2 |
 
-*CO₂e uses EPA eGRID 2022 SRVC carbon intensity [@eGRID2022] (0.386 kg CO₂e/kWh, location-based); both tools at 113.4 W (100% CPU utilisation).*
-
 **Table 9. Projected full-pipeline compute cost and carbon savings at scale (mean per run across five WGS somatic datasets, ~920K variants; c6a.4xlarge on-demand, us-east-1).**
 
 | Cohort size | Compute cost saved | CO₂e avoided | Wall-clock time saved |
