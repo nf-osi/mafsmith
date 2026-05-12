@@ -266,7 +266,7 @@ Validation and benchmark VCF datasets used in this work:
     - Cutaneous Neurofibroma Data Resource [@NFLaRosaCNFResource] (project syn4984604): syn6039268 (VarDict), syn68172710 (Strelka2 somatic indels), syn6840402 (VarScan2). Additional paired-T/N and tumor-only VCFs from this resource were used during development to surface and fix bugs in multi-allelic depth handling: syn5553155, syn5553158, syn5555584, syn5614682.
     - NF Cell Line Compound Screens [@NFFieldCellLine] (project syn11817821): syn20443868 (Ion Torrent multi-allelic VCF used to surface and fix an `AO` indexing bug).
     - Genetic Studies of Neurofibromatosis [@GeneticStudiesNF] (project syn11374339): syn29349669 (additional Strelka2 germline variants file).
-    - Johns Hopkins NF1 nerve sheath tumor biospecimen repository [@JHUBiospecimen; @JHUBiospecimenUpdate] (project syn4939902): additional VCFs used ad-hoc during development to identify edge cases and validate consistency between vcf2maf and mafsmith; specific files inspected were not recorded in committed scripts.
+    - Johns Hopkins NF1 nerve sheath tumor biospecimen repository [@JHUBiospecimen; @JHUBiospecimenUpdate] (project syn4939902): additional VCFs used ad-hoc during development to identify edge cases and validate consistency between vcf2maf and mafsmith.
 
     All files above are accessible through the NF Data Portal at [nf.synapse.org](https://nf.synapse.org).
 - **GIAB HG008 somatic (NYGC pipeline, GRCh38)** [@GIABv4]**:** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available from the [GIAB HG008 NYGC-somatic-pipeline FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/).
