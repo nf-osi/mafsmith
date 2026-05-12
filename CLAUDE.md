@@ -137,6 +137,6 @@ Detailed tables in `results/somatic_tn_benchmark.md` and `results/conversion_ben
     2. Extract: `tar -xzf ~/.vep/homo_sapiens_vep_115_GRCh38.tar.gz -C ~/.vep/`
   - Requires Perl module fix (if not done): `conda install -n vcf2maf-env -c conda-forge perl-compress-raw-zlib`
 - `scripts/compare_annotations.py` — Compare fastVEP vs VEP CSQ output on the same VCF
-- `scripts/benchmark.py` — Older single-file Python timing harness
-- `scripts/benchmark.sh` — bash alternative (less reliable on macOS)
 - `benches/vcf2maf.rs` — Criterion microbenchmarks (`cargo bench`)
+- `scripts/README.md` and `results/README.md` — per-file inventories of the validation/benchmark scripts and the manuscript-table → result-file → code mapping.
+- Older one-off scripts and earlier benchmark drafts live in `archive/`; see `archive/README.md`.

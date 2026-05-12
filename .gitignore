@@ -12,3 +12,11 @@ tests/fixtures/expected/*_vcf2maf.maf
 
 # Pandoc build output
 manuscript/build/
+
+# Python bytecode
+**/__pycache__/
+*.pyc
+
+# VEP run artifacts that land next to input VCFs
+*.vcf_summary.html
+*.vcf_warnings.txt

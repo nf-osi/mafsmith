@@ -8,8 +8,9 @@
 /// Full end-to-end tests against a running mafsmith binary:
 ///   cargo build && cargo test -- --include-ignored
 ///
-/// Comparison against vcf2maf reference output:
-///   scripts/run_comparison.sh
+/// Field-by-field comparison against vcf2maf reference output across the
+/// validation cohort lives in scripts/batch_vcf_diff_*.sh. Expected MAFs
+/// for the integration tests below are in tests/fixtures/expected/.
 use std::{
     collections::HashMap,
     fs,
