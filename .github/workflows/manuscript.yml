@@ -1,0 +1,39 @@
+name: Manuscript
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'manuscript/**'
+      - '.github/workflows/manuscript.yml'
+  pull_request:
+    paths:
+      - 'manuscript/**'
+      - '.github/workflows/manuscript.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build manuscript
+    runs-on: ubuntu-latest
+    container:
+      image: pandoc/latex:3.9
+      options: --entrypoint=""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install make
+        run: apk add --no-cache make
+
+      - name: Build HTML, PDF, DOCX
+        working-directory: manuscript
+        run: make all
+
+      - name: Upload manuscript artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: manuscript-${{ github.sha }}
+          path: manuscript/build/
+          if-no-files-found: error
+          retention-days: 30
