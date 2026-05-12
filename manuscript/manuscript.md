@@ -255,17 +255,17 @@ mafsmith is a complete, self-contained rewrite of vcf2maf in Rust, designed as a
 
 ## Data availability
 
-mafsmith source code and release binaries are available at https://github.com/nf-osi/mafsmith. Validation VCF datasets are available from the sources listed below.
+mafsmith source code and release binaries are available at [github.com/nf-osi/mafsmith](https://github.com/nf-osi/mafsmith). Validation VCF datasets are available from the sources listed below.
 
 Validation and benchmark VCF datasets used in this work:
 
-- **NF Data Portal** Validation VCF files from multiple callers (syn31624545, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637). Available at: https://nf.synapse.org
-- **GIAB HG008 somatic (NYGC pipeline, GRCh38):** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/
-- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38):** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/
-- **COLO829 somatic SV truth set (hg38):** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Zenodo: https://zenodo.org/records/7515830
-- **GIAB germline benchmarks (HG001–HG007, GRCh38):** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking and validation. Available at: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/
-- **COSMIC v103 (GRCh38):** Genome Screens Mutant (Normal) and Non-Coding Variants VCFs used for validation of annotation-database VCF format handling. Available from COSMIC under the COSMIC licence: https://cancer.sanger.ac.uk/cosmic/download
-- **ICGC PCAWG cell-line VCFs (GRCh37):** DKFZ SNV/MNV somatic VCFs for HCC1143 and HCC1954 cell lines from the ICGC Pan-Cancer Analysis of Whole Genomes (PCAWG) open data release. Available through the ICGC-ARGO open-access S3 bucket at https://object.genomeinformatics.org (bucket: `icgc25k-open`; no sign request required for open-tier data).
+- **NF Data Portal** Validation VCF files from multiple callers (syn31624545, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637). Available at [nf.synapse.org](https://nf.synapse.org).
+- **GIAB HG008 somatic (NYGC pipeline, GRCh38):** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available from the [GIAB HG008 NYGC-somatic-pipeline FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/).
+- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38):** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available from the [SEQC2 Somatic Mutation WG FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/).
+- **COLO829 somatic SV truth set (hg38):** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Available on [Zenodo record 7515830](https://zenodo.org/records/7515830).
+- **GIAB germline benchmarks (HG001–HG007, GRCh38):** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking and validation. Available from the [GIAB release FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/).
+- **COSMIC v103 (GRCh38):** Genome Screens Mutant (Normal) and Non-Coding Variants VCFs used for validation of annotation-database VCF format handling. Available under the COSMIC licence from the [COSMIC download portal](https://cancer.sanger.ac.uk/cosmic/download).
+- **ICGC PCAWG cell-line VCFs (GRCh37):** DKFZ SNV/MNV somatic VCFs for HCC1143 and HCC1954 cell lines from the ICGC Pan-Cancer Analysis of Whole Genomes (PCAWG) open data release. Available through the [ICGC-ARGO open-access S3 endpoint](https://object.genomeinformatics.org) (bucket: `icgc25k-open`; no sign request required for open-tier data).
 
 
 ---
