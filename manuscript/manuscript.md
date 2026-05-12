@@ -103,16 +103,16 @@ We validated mafsmith against vcf2maf across fifteen caller types and VCF format
 
 | Caller | Source | Variants compared |
 |--------|--------|-------------------|
-| DeepVariant 1.2.0 | syn31624545 [@NFDataPortal; @NFSteensmaCNF] | 2,936,426 |
-| GATK MuTect2 (single-sample) | syn31624525 [@NFDataPortal; @NFSteensmaCNF] | 751,548 |
+| DeepVariant 1.2.0 | syn31624545 [@NFSteensmaCNF] | 2,936,426 |
+| GATK MuTect2 (single-sample) | syn31624525 [@NFSteensmaCNF] | 751,548 |
 | GATK MuTect2 (paired T/N) | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 549,590 variants from 2 samples |
-| FreeBayes | syn31624535 [@NFDataPortal; @NFSteensmaCNF] | 2,858,303 |
-| Strelka2 germline | syn31624939; syn31624637 [@NFDataPortal; @NFSteensmaCNF]; syn29349669 [@NFDataPortal; @GeneticStudiesNF] | 9,327,717 variants from 2 samples |
+| FreeBayes | syn31624535 [@NFSteensmaCNF] | 2,858,303 |
+| Strelka2 germline | syn31624939; syn31624637 [@NFSteensmaCNF]; syn29349669 [@GeneticStudiesNF] | 9,327,717 variants from 2 samples |
 | Strelka2 somatic SNVs | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 3,754,567 variants from 2 samples |
-| Strelka2 somatic indels | syn68172710 [@NFDataPortal; @NFLaRosaCNFResource]; GIAB HG008 [@GIABv4] | 317,094 variants from 2 samples |
-| SV callers (Manta / DELLY) | syn21296193, syn21296175, syn21296184 [@NFDataPortal; @NFHirbeMPNST] | 398 (all SVs) |
-| VarScan2 somatic | syn6840402 [@NFDataPortal; @NFLaRosaCNFResource] | 59,618 |
-| VarDict (paired T/N) | syn6039268 [@NFDataPortal; @NFLaRosaCNFResource] | 9,303,064 |
+| Strelka2 somatic indels | syn68172710 [@NFLaRosaCNFResource]; GIAB HG008 [@GIABv4] | 317,094 variants from 2 samples |
+| SV callers (Manta / DELLY) | syn21296193, syn21296175, syn21296184 [@NFHirbeMPNST] | 398 (all SVs) |
+| VarScan2 somatic | syn6840402 [@NFLaRosaCNFResource] | 59,618 |
+| VarDict (paired T/N) | syn6039268 [@NFLaRosaCNFResource] | 9,303,064 |
 | SomaticSniper | SEQC2 HCC1395 [@SEQC2HCC1395] | 164,704 |
 | GIAB germline benchmarks | HG001–HG007 (NIST v4.2.1) [@GIABv4] | 27,529,001 variants from 7 samples |
 | ICGC PCAWG consensus (SNV/MNV) | ICGC PCAWG open data (GRCh37) [@PCAWG] | 21,628,933 variants from 1,902 samples |
