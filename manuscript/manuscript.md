@@ -177,8 +177,8 @@ To quantify the full annotation pipeline speedup, we re-ran all five datasets wi
 
 **Table 5. Full annotated pipeline benchmark: mafsmith + fastVEP vs. vcf2maf + VEP 115 (symmetric 16-core comparison).**
 
-| Dataset / Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf + VEP `--vep-forks 16` (s) | Speedup (1-core) | Speedup (16-core) |
-|------------------|----------|---------------------|----------------------|------------------------------------|------------------|-------------------|
+| Dataset / Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf + VEP (s) | Speedup (1-core) | Speedup (16-core) |
+|------------------|----------|---------------------|----------------------|-------------------|------------------|-------------------|
 | GIAB HG008 / MuTect2 | 277,645 | 25.755 | 11.615 | 459.675 | 17.8× | 39.6× |
 | GIAB HG008 / Strelka2 SNV | 1,562,847 | 93.963 | 30.860 | 2851.569 | 30.3× | 92.4× |
 | GIAB HG008 / Strelka2 INDEL | 293,719 | 25.720 | 11.577 | 613.111 | 23.8× | 53.0× |
