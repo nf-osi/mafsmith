@@ -14,7 +14,8 @@ header-includes:
   - \newunicodechar{₂}{\textsubscript{2}}
   - \newunicodechar{₃}{\textsubscript{3}}
   - \usepackage{xurl}
-  - \AtBeginEnvironment{longtable}{\scriptsize}
+  - \usepackage[table]{xcolor}
+  - \AtBeginEnvironment{longtable}{\scriptsize\rowcolors{2}{gray!12}{white}}
 ---
 
 ^1^ Sage Bionetworks, Seattle, WA, USA
@@ -101,22 +102,22 @@ We validated mafsmith against vcf2maf across fifteen caller types and VCF format
 
 | Caller | Source | Variants compared |
 |--------|--------|-------------------|
-| DeepVariant 1.2.0 [@DeepVariant] | syn31624545 [@NFDataPortal; @NFSteensmaCNF] | 2,936,426 |
-| GATK MuTect2 (single-sample) [@MuTect2] | syn31624525 [@NFDataPortal; @NFSteensmaCNF] | 751,548 |
-| GATK MuTect2 (paired T/N) [@MuTect2] | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 549,590 variants from 2 samples |
-| FreeBayes [@FreeBayes] | syn31624535 [@NFDataPortal; @NFSteensmaCNF] | 2,858,303 |
-| Strelka2 germline [@Strelka2] | syn31624939; syn31624637 [@NFDataPortal; @NFSteensmaCNF]; syn29349669 [@NFDataPortal; @GeneticStudiesNF] | 9,327,717 variants from 2 samples |
-| Strelka2 somatic SNVs [@Strelka2] | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 3,754,567 variants from 2 samples |
-| Strelka2 somatic indels [@Strelka2] | syn68172710 [@NFDataPortal; @NFLaRosaCNFResource]; GIAB HG008 [@GIABv4] | 317,094 variants from 2 samples |
-| SV callers (Manta [@Manta] / DELLY [@DELLY]) | syn21296193, syn21296175, syn21296184 [@NFDataPortal; @NFHirbeMPNST] | 398 (all SVs) |
-| VarScan2 somatic [@VarScan2] | syn6840402 [@NFDataPortal; @NFLaRosaCNFResource] | 59,618 |
-| VarDict (paired T/N) [@VarDict] | syn6039268 [@NFDataPortal; @NFLaRosaCNFResource] | 9,303,064 |
-| SomaticSniper [@SomaticSniper] | SEQC2 HCC1395 [@SEQC2HCC1395] | 164,704 |
+| DeepVariant 1.2.0 | syn31624545 [@NFDataPortal; @NFSteensmaCNF] | 2,936,426 |
+| GATK MuTect2 (single-sample) | syn31624525 [@NFDataPortal; @NFSteensmaCNF] | 751,548 |
+| GATK MuTect2 (paired T/N) | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 549,590 variants from 2 samples |
+| FreeBayes | syn31624535 [@NFDataPortal; @NFSteensmaCNF] | 2,858,303 |
+| Strelka2 germline | syn31624939; syn31624637 [@NFDataPortal; @NFSteensmaCNF]; syn29349669 [@NFDataPortal; @GeneticStudiesNF] | 9,327,717 variants from 2 samples |
+| Strelka2 somatic SNVs | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 3,754,567 variants from 2 samples |
+| Strelka2 somatic indels | syn68172710 [@NFDataPortal; @NFLaRosaCNFResource]; GIAB HG008 [@GIABv4] | 317,094 variants from 2 samples |
+| SV callers (Manta / DELLY) | syn21296193, syn21296175, syn21296184 [@NFDataPortal; @NFHirbeMPNST] | 398 (all SVs) |
+| VarScan2 somatic | syn6840402 [@NFDataPortal; @NFLaRosaCNFResource] | 59,618 |
+| VarDict (paired T/N) | syn6039268 [@NFDataPortal; @NFLaRosaCNFResource] | 9,303,064 |
+| SomaticSniper | SEQC2 HCC1395 [@SEQC2HCC1395] | 164,704 |
 | GIAB germline benchmarks | HG001–HG007 (NIST v4.2.1) [@GIABv4] | 27,529,001 variants from 7 samples |
 | ICGC PCAWG consensus (SNV/MNV) | ICGC PCAWG open data (GRCh37) [@PCAWG] | 21,628,933 variants from 1,902 samples |
-| DepMap CCLE WGS (GATK MuTect2 [@MuTect2]) | DepMap CCLE (hg38) [@CCLE] | 8,020,000 variants from 802 samples (10,000/sample) |
-| COSMIC v103 (GenomeScreensMutant) [@COSMIC] | Aggregate somatic mutations from COSMIC genome-wide cancer screens (no sample columns) | 3,000 (sampled from full database) |
-| COSMIC v103 (NonCodingVariants) [@COSMIC] | Aggregate non-coding somatic variants from COSMIC (no sample columns) | 3,000 (sampled from full database) |
+| DepMap CCLE WGS (GATK MuTect2) | DepMap CCLE (hg38) [@CCLE] | 8,020,000 variants from 802 samples (10,000/sample) |
+| COSMIC v103 (GenomeScreensMutant) | Aggregate somatic mutations from COSMIC genome-wide cancer screens [@COSMIC] (no sample columns) | 3,000 (sampled from full database) |
+| COSMIC v103 (NonCodingVariants) | Aggregate non-coding somatic variants from COSMIC [@COSMIC] (no sample columns) | 3,000 (sampled from full database) |
 
 To confirm that mafsmith produces equivalent output to vcf2maf when both tools use the same annotation engine, we ran end-to-end pipeline comparisons against two different Ensembl VEP releases (VEP 112 and VEP 115), each used as the shared annotation source on both sides of the comparison; the VEP 115 cache was the same one used for the timing benchmarks (Tables 5 and 8), so the equivalence and performance experiments were performed alongside one another and use a common VEP installation for the timed runs. We selected 23 representative datasets spanning all major caller types in Table 1 (20 GRCh38 datasets; 3 representative samples from the GRCh37 ICGC PCAWG consensus callset), sampling 2,000 variants per dataset, and compared MAF output from mafsmith and vcf2maf in strict comparison mode at each VEP version. `Variant_Classification` was excluded from this comparison because even with identical VEP output, mafsmith and vcf2maf.pl differ in how they handle regulatory-feature CSQ entries (ENSR-prefixed IDs) — mafsmith excludes these from transcript ranking while vcf2maf.pl includes them — producing approximately 1 classification difference per 3,000 variants at gene-boundary regions; this does not affect allele-level conversion fields. Across all 23 datasets, both genome builds, and both VEP releases, mafsmith and vcf2maf produced 0 conversion-field differences, confirming that the two tools are interchangeable as drop-in replacements when using the same VEP annotation cache.
 
@@ -147,14 +148,14 @@ We benchmarked mafsmith against vcf2maf on the conversion step in isolation, pas
 
 | Sample | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf (s) | Speedup (1-core) | Speedup (16-core) |
 |--------|----------|---------------------|----------------------|----------------|------------------|-------------------|
-| HG001 (NA12878) | 3,893,341 | 11.579 | 7.398 | 549.988 | 47.5× | 74.3× |
-| HG002 (NA24385) | 4,048,342 | 12.314 | 7.399 | 579.662 | 47.1× | 78.3× |
-| HG003 (NA24149) | 4,000,097 | 12.084 | 7.194 | 573.716 | 47.5× | 79.7× |
-| HG004 (NA24143) | 4,031,346 | 11.994 | 7.054 | 573.687 | 47.8× | 81.3× |
-| HG005 (NA24631) | 3,856,856 | 11.986 | 7.210 | 558.302 | 46.6× | 77.4× |
-| HG006 (NA24694) | 3,839,315 | 11.071 | 6.669 | 537.916 | 48.6× | 80.7× |
-| HG007 (NA24695) | 3,859,704 | 11.256 | 6.424 | 540.243 | 48.0× | 84.1× |
-| **Mean ± SD** | | **11.755 ± 0.462 s** | **7.050 ± 0.371 s** | **559.073 ± 17.016 s** | **47.6× ± 0.6×** | **79.4× ± 3.1×** |
+| HG001 (NA12878) | 3,893,341 | 11.6 | 7.40 | 550 | 47.5× | 74.3× |
+| HG002 (NA24385) | 4,048,342 | 12.3 | 7.40 | 580 | 47.1× | 78.3× |
+| HG003 (NA24149) | 4,000,097 | 12.1 | 7.19 | 574 | 47.5× | 79.7× |
+| HG004 (NA24143) | 4,031,346 | 12.0 | 7.05 | 574 | 47.8× | 81.3× |
+| HG005 (NA24631) | 3,856,856 | 12.0 | 7.21 | 558 | 46.6× | 77.4× |
+| HG006 (NA24694) | 3,839,315 | 11.1 | 6.67 | 538 | 48.6× | 80.7× |
+| HG007 (NA24695) | 3,859,704 | 11.3 | 6.42 | 540 | 48.0× | 84.1× |
+| **Mean ± SD** | | **11.8 ± 0.5 s** | **7.05 ± 0.37 s** | **559 ± 17 s** | **47.6× ± 0.6×** | **79.4× ± 3.1×** |
 
 On a single core, mafsmith achieved a mean throughput of 334,802 variants/s (a 47.6-fold speedup over vcf2maf; range 46.6–48.6×). The performance advantage is therefore primarily algorithmic rather than a product of parallelism. With all 16 cores, throughput increased to 558,914 variants/s (79.4-fold speedup, range 74.3–84.1×), a 1.67× parallel scaling factor. Both speedups were consistent across samples (coefficient of variation: 1.3% and 3.9%, respectively).
 
@@ -164,11 +165,11 @@ To confirm that speedups generalise to paired tumor/normal somatic VCFs, we benc
 
 | Dataset / Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf (s) | Speedup (1-core) | Speedup (16-core) |
 |------------------|----------|---------------------|----------------------|-------------|------------------|-------------------|
-| GIAB HG008 / MuTect2 | 277,645 | 1.294 | 0.779 | 42.397 | 32.8× | 54.4× |
-| GIAB HG008 / Strelka2 SNV | 1,562,847 | 5.273 | 2.960 | 245.899 | 46.6× | 83.1× |
-| GIAB HG008 / Strelka2 INDEL | 293,719 | 1.239 | 0.684 | 44.676 | 36.1× | 65.3× |
-| SEQC2 HCC1395 / MuTect2 | 271,945 | 1.178 | 0.631 | 38.759 | 32.9× | 61.4× |
-| SEQC2 HCC1395 / Strelka | 2,191,720 | 7.301 | 4.147 | 345.556 | 47.3× | 83.3× |
+| GIAB HG008 / MuTect2 | 277,645 | 1.29 | 0.779 | 42.4 | 32.8× | 54.4× |
+| GIAB HG008 / Strelka2 SNV | 1,562,847 | 5.27 | 2.96 | 246 | 46.6× | 83.1× |
+| GIAB HG008 / Strelka2 INDEL | 293,719 | 1.24 | 0.684 | 44.7 | 36.1× | 65.3× |
+| SEQC2 HCC1395 / MuTect2 | 271,945 | 1.18 | 0.631 | 38.8 | 32.9× | 61.4× |
+| SEQC2 HCC1395 / Strelka | 2,191,720 | 7.30 | 4.15 | 346 | 47.3× | 83.3× |
 | **Mean** | | | | | **39.1×** | **69.5×** |
 
 mafsmith achieved a mean single-core speedup of **39.1×** (range 32.8–47.3×) and a 16-core speedup of **69.5×** (range 54.4–83.3×) across paired tumor/normal VCFs. The lower bound of the range reflects MuTect2 VCFs, which carry larger per-variant INFO fields (TLOD, NLOD, per-allele annotations) that increase per-line parsing cost for both tools. Note also that vcf2maf does not accept gzip-compressed input and requires decompression before processing; mafsmith reads gzip natively, a further practical advantage not captured in these timings.
@@ -179,11 +180,11 @@ To quantify the full annotation pipeline speedup, we re-ran all five datasets wi
 
 | Dataset / Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf + VEP (s) | Speedup (1-core) | Speedup (16-core) |
 |------------------|----------|---------------------|----------------------|-------------------|------------------|-------------------|
-| GIAB HG008 / MuTect2 | 277,645 | 25.755 | 11.615 | 459.675 | 17.8× | 39.6× |
-| GIAB HG008 / Strelka2 SNV | 1,562,847 | 93.963 | 30.860 | 2851.569 | 30.3× | 92.4× |
-| GIAB HG008 / Strelka2 INDEL | 293,719 | 25.720 | 11.577 | 613.111 | 23.8× | 53.0× |
-| SEQC2 HCC1395 / MuTect2 | 271,945 | 20.049 | 10.888 | 445.663 | 22.2× | 40.9× |
-| SEQC2 HCC1395 / Strelka | 2,191,720 | 128.527 | 40.961 | 4166.796 | 32.4× | 101.7× |
+| GIAB HG008 / MuTect2 | 277,645 | 25.8 | 11.6 | 460 | 17.8× | 39.6× |
+| GIAB HG008 / Strelka2 SNV | 1,562,847 | 94.0 | 30.9 | 2,850 | 30.3× | 92.4× |
+| GIAB HG008 / Strelka2 INDEL | 293,719 | 25.7 | 11.6 | 613 | 23.8× | 53.0× |
+| SEQC2 HCC1395 / MuTect2 | 271,945 | 20.0 | 10.9 | 446 | 22.2× | 40.9× |
+| SEQC2 HCC1395 / Strelka | 2,191,720 | 129 | 41.0 | 4,170 | 32.4× | 101.7× |
 | **Mean** | | | | | **25.3×** | **65.5×** |
 
 Even in the symmetric 16-core comparison, the full mafsmith + fastVEP pipeline achieved a mean single-core speedup of **25.3×** (range 17.8–32.4×) and a 16-core speedup of **65.5×** (range 39.6–101.7×).
@@ -225,7 +226,6 @@ For the full annotated pipeline, mean time savings of 1,686 s per run correspond
 | GIAB HG008, Strelka2 INDEL | 293,719 | 602 | $0.102 | 18.9 | 7.31 |
 | SEQC2 HCC1395, MuTect2 | 271,945 | 435 | $0.074 | 13.7 | 5.28 |
 | SEQC2 HCC1395, Strelka | 2,191,720 | 4,126 | $0.701 | 129.9 | 50.2 |
-| **Mean** | | **1,686** | **$0.287** | **53.1** | **20.5** |
 
 *CO₂e uses EPA eGRID 2022 SRVC carbon intensity [@eGRID2022] (0.386 kg CO₂e/kWh, location-based); both tools at 113.4 W (100% CPU utilisation).*
 
@@ -282,13 +282,13 @@ Validation and benchmark VCF datasets used in this work:
 
 ## Acknowledgements
 
-mafsmith builds on the design, field conventions, and years of accumulated edge-case handling embodied in vcf2maf. We are grateful to Cyriac Kandoth ([0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)) and other vcf2maf contributors for their sustained work developing and maintaining vcf2maf without which this rewrite would not have been possible.
+mafsmith builds on the design, field conventions, and years of accumulated edge-case handling embodied in vcf2maf. We are grateful to Cyriac Kandoth ([0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)) and other vcf2maf contributors for their sustained work developing and maintaining vcf2maf without which this rewrite would not have been possible. This article was drafted with the assistance of large language models (Anthropic Claude Sonnet 4.6 / Opus 4.7), with the author reviewing, editing, and verifying all content.
 
 ---
 
 ## Funding
 
-This work was supported in part by API credits from Anthropic's AI for Science program. Research was supported by the Neurofibromatosis Therapeutic Acceleration Program (NTAP).
+Funding for this work was provided by the Neurofibromatosis Therapeutic Acceleration Program [@NTAP]. This work was also supported in part by API credits from Anthropic's AI for Science program.
 
 ---
 
