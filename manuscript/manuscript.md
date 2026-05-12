@@ -16,7 +16,7 @@ header-includes:
   - \newunicodechar{₂}{\textsubscript{2}}
   - \newunicodechar{₃}{\textsubscript{3}}
   - \usepackage{xurl}
-  - \AtBeginEnvironment{longtable}{\footnotesize}
+  - \AtBeginEnvironment{longtable}{\scriptsize}
 ---
 
 ^1^ Sage Bionetworks, Seattle, WA, USA
