@@ -4,6 +4,7 @@ author: "Robert Allaway^1^"
 bibliography: references.bib
 link-citations: true
 csl: https://www.zotero.org/styles/nature
+geometry: margin=0.75in
 header-includes:
   - \usepackage{newunicodechar}
   - \newunicodechar{≠}{\ensuremath{\neq}}
