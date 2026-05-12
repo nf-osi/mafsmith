@@ -162,14 +162,14 @@ To confirm that speedups generalise to paired tumor/normal somatic VCFs, we benc
 
 **Table 4. Somatic tumor/normal benchmark: mafsmith vs vcf2maf.**
 
-| Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf (s) | Speedup (1-core) | Speedup (16-core) |
-|---------|--------|----------|---------------------|----------------------|----------------|------------------|-------------------|
-| GIAB HG008 | MuTect2 | 277,645 | 1.294 | 0.779 | 42.397 | 32.8× | 54.4× |
-| GIAB HG008 | Strelka2 SNV | 1,562,847 | 5.273 | 2.960 | 245.899 | 46.6× | 83.1× |
-| GIAB HG008 | Strelka2 INDEL | 293,719 | 1.239 | 0.684 | 44.676 | 36.1× | 65.3× |
-| SEQC2 HCC1395 | MuTect2 | 271,945 | 1.178 | 0.631 | 38.759 | 32.9× | 61.4× |
-| SEQC2 HCC1395 | Strelka | 2,191,720 | 7.301 | 4.147 | 345.556 | 47.3× | 83.3× |
-| **Mean** | | | | | | **39.1×** | **69.5×** |
+| Dataset / Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf (s) | Speedup (1-core) | Speedup (16-core) |
+|------------------|----------|---------------------|----------------------|-------------|------------------|-------------------|
+| GIAB HG008 / MuTect2 | 277,645 | 1.294 | 0.779 | 42.397 | 32.8× | 54.4× |
+| GIAB HG008 / Strelka2 SNV | 1,562,847 | 5.273 | 2.960 | 245.899 | 46.6× | 83.1× |
+| GIAB HG008 / Strelka2 INDEL | 293,719 | 1.239 | 0.684 | 44.676 | 36.1× | 65.3× |
+| SEQC2 HCC1395 / MuTect2 | 271,945 | 1.178 | 0.631 | 38.759 | 32.9× | 61.4× |
+| SEQC2 HCC1395 / Strelka | 2,191,720 | 7.301 | 4.147 | 345.556 | 47.3× | 83.3× |
+| **Mean** | | | | | **39.1×** | **69.5×** |
 
 mafsmith achieved a mean single-core speedup of **39.1×** (range 32.8–47.3×) and a 16-core speedup of **69.5×** (range 54.4–83.3×) across paired tumor/normal VCFs. The lower bound of the range reflects MuTect2 VCFs, which carry larger per-variant INFO fields (TLOD, NLOD, per-allele annotations) that increase per-line parsing cost for both tools. Note also that vcf2maf does not accept gzip-compressed input and requires decompression before processing; mafsmith reads gzip natively, a further practical advantage not captured in these timings.
 
@@ -177,14 +177,14 @@ To quantify the full annotation pipeline speedup, we re-ran all five datasets wi
 
 **Table 5. Full annotated pipeline benchmark: mafsmith + fastVEP vs. vcf2maf + VEP 115 (symmetric 16-core comparison).**
 
-| Dataset | Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf + VEP (--vep-forks 16) (s) | Speedup (1-core) | Speedup (16-core) |
-|---------|--------|----------|---------------------|----------------------|----------------------------------------|------------------|-------------------|
-| GIAB HG008 | MuTect2 | 277,645 | 25.755 | 11.615 | 459.675 | 17.8× | 39.6× |
-| GIAB HG008 | Strelka2 SNV | 1,562,847 | 93.963 | 30.860 | 2851.569 | 30.3× | 92.4× |
-| GIAB HG008 | Strelka2 INDEL | 293,719 | 25.720 | 11.577 | 613.111 | 23.8× | 53.0× |
-| SEQC2 HCC1395 | MuTect2 | 271,945 | 20.049 | 10.888 | 445.663 | 22.2× | 40.9× |
-| SEQC2 HCC1395 | Strelka | 2,191,720 | 128.527 | 40.961 | 4166.796 | 32.4× | 101.7× |
-| **Mean** | | | | | | **25.3×** | **65.5×** |
+| Dataset / Caller | Variants | mafsmith 1-core (s) | mafsmith 16-core (s) | vcf2maf + VEP `--vep-forks 16` (s) | Speedup (1-core) | Speedup (16-core) |
+|------------------|----------|---------------------|----------------------|------------------------------------|------------------|-------------------|
+| GIAB HG008 / MuTect2 | 277,645 | 25.755 | 11.615 | 459.675 | 17.8× | 39.6× |
+| GIAB HG008 / Strelka2 SNV | 1,562,847 | 93.963 | 30.860 | 2851.569 | 30.3× | 92.4× |
+| GIAB HG008 / Strelka2 INDEL | 293,719 | 25.720 | 11.577 | 613.111 | 23.8× | 53.0× |
+| SEQC2 HCC1395 / MuTect2 | 271,945 | 20.049 | 10.888 | 445.663 | 22.2× | 40.9× |
+| SEQC2 HCC1395 / Strelka | 2,191,720 | 128.527 | 40.961 | 4166.796 | 32.4× | 101.7× |
+| **Mean** | | | | | **25.3×** | **65.5×** |
 
 Even in the symmetric 16-core comparison, the full mafsmith + fastVEP pipeline achieved a mean single-core speedup of **25.3×** (range 17.8–32.4×) and a 16-core speedup of **65.5×** (range 39.6–101.7×). With VEP at its default `--vep-forks 4`, speedups increased to a mean of **31.5×** (1-core) and **83.4×** (16-core). This reflects the asymmetry between fastVEP's Rayon parallelism and VEP's fork-based model at low fork counts. The MuTect2 datasets show the lowest speedups due to their larger per-variant INFO fields, consistent with the conversion-only results.
 
