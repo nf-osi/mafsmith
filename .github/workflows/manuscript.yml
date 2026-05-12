@@ -26,6 +26,9 @@ jobs:
       - name: Install make
         run: apk add --no-cache make
 
+      - name: Install extra LaTeX packages
+        run: tlmgr install newunicodechar xurl
+
       - name: Build HTML, PDF, DOCX
         working-directory: manuscript
         run: make all
