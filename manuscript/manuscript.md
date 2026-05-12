@@ -119,7 +119,7 @@ We validated mafsmith against vcf2maf across fifteen caller types and VCF format
 | COSMIC v103 (GenomeScreensMutant) [@COSMIC] | Aggregate somatic mutations from COSMIC genome-wide cancer screens (no sample columns) | 3,000 (sampled from full database) |
 | COSMIC v103 (NonCodingVariants) [@COSMIC] | Aggregate non-coding somatic variants from COSMIC (no sample columns) | 3,000 (sampled from full database) |
 
-To confirm that mafsmith produces equivalent output to vcf2maf when both tools use the same annotation engine, we also ran an end-to-end pipeline comparison using Ensembl VEP 112 for both tools with the same indexed VEP 112 cache. We selected 23 representative datasets spanning all major caller types in Table 1 (20 GRCh38 datasets; 3 representative samples from the GRCh37 ICGC PCAWG consensus callset), sampling 2,000 variants per dataset, and compared MAF output from mafsmith + VEP 112 versus vcf2maf + VEP 112 in strict comparison mode. `Variant_Classification` was excluded from this comparison because even with identical VEP output, mafsmith and vcf2maf.pl differ in how they handle regulatory-feature CSQ entries (ENSR-prefixed IDs) — mafsmith excludes these from transcript ranking while vcf2maf.pl includes them — producing approximately 1 classification difference per 3,000 variants at gene-boundary regions; this does not affect allele-level conversion fields. Across all 23 datasets and both genome builds, mafsmith and vcf2maf produced 0 conversion-field differences, confirming that the two tools are interchangeable as drop-in replacements when using the same VEP annotation cache.
+To confirm that mafsmith produces equivalent output to vcf2maf when both tools use the same annotation engine, we also ran an end-to-end pipeline comparison using Ensembl VEP 112 for both tools with the same indexed VEP 112 cache. We selected 23 representative datasets spanning all major caller types in Table 1 (20 GRCh38 datasets; 3 representative samples from the GRCh37 ICGC PCAWG consensus callset), sampling 2,000 variants per dataset, and compared MAF output from mafsmith + VEP 112 versus vcf2maf + VEP 112 in strict comparison mode. `Variant_Classification` was excluded from this comparison because even with identical VEP output, mafsmith and vcf2maf.pl differ in how they handle regulatory-feature CSQ entries (ENSR-prefixed IDs): mafsmith excludes these from transcript ranking while vcf2maf.pl includes them, producing approximately 1 classification difference per 3,000 variants at gene-boundary regions; this does not affect allele-level conversion fields. Across all 23 datasets and both genome builds, mafsmith and vcf2maf produced 0 conversion-field differences, confirming that the two tools are interchangeable as drop-in replacements when using the same VEP annotation cache.
 
 ### Validation of maf2vcf, vcf2vcf, and maf2maf subcommands
 
@@ -201,7 +201,7 @@ Despite drawing more instantaneous power at full 16-core utilisation (113.4 W vs
 |--------|-------------------|------------|-----------------|
 | Wall-clock time | 7.1 s | 559.1 s | 552.0 s |
 | Instance cost | $0.00120 | $0.09504 | **$0.094** |
-| Estimated power draw | 113.4 W | 39.9 W | — |
+| Estimated power draw | 113.4 W | 39.9 W | - |
 | Energy consumed | 0.22 Wh | 6.20 Wh | **5.97 Wh** |
 | CO₂e (location-based) | 0.086 g | 2.393 g | **2.31 g** |
 
