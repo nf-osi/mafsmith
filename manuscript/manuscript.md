@@ -4,8 +4,6 @@ author: "Robert Allaway^1^"
 bibliography: references.bib
 link-citations: true
 csl: https://www.zotero.org/styles/nature
-nocite: |
-  @MuTect2, @Strelka2, @FreeBayes, @DRAGEN, @Manta, @TCGA
 header-includes:
   - \usepackage{newunicodechar}
   - \newunicodechar{≠}{\ensuremath{\neq}}
@@ -31,7 +29,7 @@ The Mutation Annotation Format (MAF) is a standard interchange format for somati
 
 ## Introduction
 
-Somatic variant calling produces VCF files whose downstream use in cancer genomics almost universally requires conversion to the Mutation Annotation Format (MAF). MAF is the primary data model for the NCI Genomic Data Commons (GDC) [@GDC] and is consumed by widely used analytical tools including maftools [@maftools], cBioPortal [@cBioPortal], and OncoKB [@OncoKB]. The conversion from VCF to MAF is non-trivial: it requires functional annotation of each variant against a transcript database, selection of a canonical or preferred transcript, normalisation of multi-allelic and indel representations, and mapping of genotype information to allele-level MAF fields.
+Somatic variant calling produces VCF files whose downstream use in cancer genomics almost universally requires conversion to the Mutation Annotation Format (MAF). MAF is the primary data model for the NCI Genomic Data Commons (GDC) [@GDC], which hosts large cancer cohorts including The Cancer Genome Atlas [@TCGA], and is consumed by widely used analytical tools including maftools [@maftools], cBioPortal [@cBioPortal], and OncoKB [@OncoKB]. The conversion from VCF to MAF is non-trivial: it requires functional annotation of each variant against a transcript database, selection of a canonical or preferred transcript, normalisation of multi-allelic and indel representations, and mapping of genotype information to allele-level MAF fields.
 
 The standard tool for this conversion is vcf2maf [@vcf2maf]. vcf2maf is a Perl script that wraps the Ensembl Variant Effect Predictor (VEP) [@VEP], handling the full complexity of VCF allele representations, multi-allelic sites, structural variants, and caller-specific FORMAT field conventions that have accumulated over years of production use across major cancer genomics consortia. Its breadth of supported vcf versions and spec-non-conformant files make it the reference implementation.
 
@@ -49,7 +47,7 @@ mafsmith was implemented in Rust using Anthropic's Claude Sonnet 4.6 language mo
 
 ### Validation datasets
 
-Validation used a panel of real-world VCF files spanning 15 caller types and VCF formats, including single-sample germline (DeepVariant, FreeBayes, Strelka2 germline, GIAB benchmark consensus), paired tumor/normal somatic (GATK MuTect2, Strelka2 somatic, VarScan2, VarDict, SomaticSniper), structural variant (Manta/DELLY), and annotation-database VCFs (COSMIC v103). Datasets spanned both GRCh38 and GRCh37 reference builds; full source information is provided in the Data Availability section and Table 1. For each dataset, a random subset of variants was compared field-by-field between mafsmith and vcf2maf; full-cohort validation was performed for the GIAB germline benchmarks (27.5 million variants from 7 samples), ICGC PCAWG consensus (21.6 million variants from 1,902 samples), and DepMap CCLE WGS (8 million variants from 802 samples).
+Validation used a panel of real-world VCF files spanning 15 caller types and VCF formats, including single-sample germline (DeepVariant [@DeepVariant], FreeBayes [@FreeBayes], Strelka2 germline [@Strelka2], GIAB benchmark consensus [@GIABv4]), paired tumor/normal somatic (GATK MuTect2 [@MuTect2], Strelka2 somatic [@Strelka2], VarScan2 [@VarScan2], VarDict [@VarDict], SomaticSniper [@SomaticSniper]), structural variant (Manta [@Manta] / DELLY [@DELLY]), and annotation-database VCFs (COSMIC v103 [@COSMIC]). Datasets spanned both GRCh38 and GRCh37 reference builds; full source information is provided in the Data Availability section and Table 1. For each dataset, a random subset of variants was compared field-by-field between mafsmith and vcf2maf; full-cohort validation was performed for the GIAB germline benchmarks [@GIABv4] (27.5 million variants from 7 samples), ICGC PCAWG consensus [@PCAWG] (21.6 million variants from 1,902 samples), and DepMap CCLE WGS [@CCLE] (8 million variants from 802 samples).
 
 ## Implementation
 
@@ -78,7 +76,7 @@ VCF alleles are left-aligned and trimmed using a prefix/suffix-stripping approac
 mafsmith implements vcf2maf logic for determining `Tumor_Seq_Allele1` and `Tumor_Seq_Allele2` from VCF FORMAT fields. This includes:
 
 - **GT-based allele assignment**: GT allele indices are sorted; the minimum index determines Allele1 (REF for heterozygous, ALT for homozygous-alt).
-- **Depth-based hom-alt inference**: when GT is a no-call (`./.`) or homozygous-reference (`0/0`), allele assignment falls back to AD-based VAF; VAF ≥ 0.7 is treated as homozygous-alt. This matches vcf2maf behaviour across DRAGEN, MuTect2, and GVCF-style callers.
+- **Depth-based hom-alt inference**: when GT is a no-call (`./.`) or homozygous-reference (`0/0`), allele assignment falls back to AD-based VAF; VAF ≥ 0.7 is treated as homozygous-alt. This matches vcf2maf behaviour across DRAGEN [@DRAGEN], MuTect2, and GVCF-style callers.
 - **VAF override**: for paired tumour/normal VCFs, when GT indicates heterozygous but VAF ≥ 0.7 (suggesting caller under-calling), Allele1 is overridden to ALT, matching vcf2maf. This override is suppressed for single-sample VCFs (absent normal column).
 - **`--strict` mode**: when AD arrays are shorter than the expected `1 + n_alts` length (a GATK behaviour for trimmed multi-allelic sites), `--strict` outputs `.` for all depth fields and suppresses depth-based allele calling, exactly matching vcf2maf. In default mode, mafsmith extracts whatever depth information is available.
 - **Strelka2 somatic FORMAT fields**: Strelka2 somatic VCFs lack a GT field and use caller-specific depth fields (AU/CU/GU/TU for SNVs, TAR/TIR for indels). mafsmith extracts depth counts from these fields and infers het/hom-alt from VAF.
@@ -99,22 +97,22 @@ We validated mafsmith against vcf2maf across fifteen caller types and VCF format
 
 | Caller | Source | Variants compared |
 |--------|--------|-------------------|
-| DeepVariant 1.2.0 | syn31624545 | 2,936,426 |
-| GATK MuTect2 (single-sample) | syn31624525 | 751,548 |
-| GATK MuTect2 (paired T/N) | GIAB HG008; SEQC2 HCC1395 | 549,590 variants from 2 samples |
-| FreeBayes | syn31624535 | 2,858,303 |
-| Strelka2 germline | syn31624939; syn31624637 | 9,327,717 variants from 2 samples |
-| Strelka2 somatic SNVs | GIAB HG008; SEQC2 HCC1395 | 3,754,567 variants from 2 samples |
-| Strelka2 somatic indels | syn68172710; GIAB HG008 | 317,094 variants from 2 samples |
-| SV callers (Manta/DELLY) | syn21296193 | 398 (all SVs) |
-| VarScan2 somatic | syn6840402 | 59,618 |
-| VarDict (paired T/N) | syn6039268 | 9,303,064 |
-| SomaticSniper | SEQC2 HCC1395 | 164,704 |
-| GIAB germline benchmarks | HG001–HG007 (NIST v4.2.1) | 27,529,001 variants from 7 samples |
-| ICGC PCAWG consensus (SNV/MNV) | ICGC PCAWG open data (GRCh37) | 21,628,933 variants from 1,902 samples |
-| DepMap CCLE WGS (GATK MuTect2) | DepMap CCLE (hg38) | 8,020,000 variants from 802 samples (10,000/sample) |
-| COSMIC v103 (GenomeScreensMutant) | Aggregate somatic mutations from COSMIC genome-wide cancer screens (no sample columns) | 3,000 (sampled from full database) |
-| COSMIC v103 (NonCodingVariants) | Aggregate non-coding somatic variants from COSMIC (no sample columns) | 3,000 (sampled from full database) |
+| DeepVariant 1.2.0 [@DeepVariant] | syn31624545 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn31624545 --> | 2,936,426 |
+| GATK MuTect2 (single-sample) [@MuTect2] | syn31624525 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn31624525 --> | 751,548 |
+| GATK MuTect2 (paired T/N) [@MuTect2] | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 549,590 variants from 2 samples |
+| FreeBayes [@FreeBayes] | syn31624535 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn31624535 --> | 2,858,303 |
+| Strelka2 germline [@Strelka2] | syn31624939; syn31624637 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing these syns --> | 9,327,717 variants from 2 samples |
+| Strelka2 somatic SNVs [@Strelka2] | GIAB HG008 [@GIABv4]; SEQC2 HCC1395 [@SEQC2HCC1395] | 3,754,567 variants from 2 samples |
+| Strelka2 somatic indels [@Strelka2] | syn68172710 [@NFDataPortal]; GIAB HG008 [@GIABv4] <!-- TODO: cite specific NF studies contributing syn68172710 --> | 317,094 variants from 2 samples |
+| SV callers (Manta [@Manta] / DELLY [@DELLY]) | syn21296193 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn21296193 --> | 398 (all SVs) |
+| VarScan2 somatic [@VarScan2] | syn6840402 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn6840402 --> | 59,618 |
+| VarDict (paired T/N) [@VarDict] | syn6039268 [@NFDataPortal] <!-- TODO: cite specific NF studies contributing syn6039268 --> | 9,303,064 |
+| SomaticSniper [@SomaticSniper] | SEQC2 HCC1395 [@SEQC2HCC1395] | 164,704 |
+| GIAB germline benchmarks | HG001–HG007 (NIST v4.2.1) [@GIABv4] | 27,529,001 variants from 7 samples |
+| ICGC PCAWG consensus (SNV/MNV) | ICGC PCAWG open data (GRCh37) [@PCAWG] | 21,628,933 variants from 1,902 samples |
+| DepMap CCLE WGS (GATK MuTect2 [@MuTect2]) | DepMap CCLE (hg38) [@CCLE] | 8,020,000 variants from 802 samples (10,000/sample) |
+| COSMIC v103 (GenomeScreensMutant) [@COSMIC] | Aggregate somatic mutations from COSMIC genome-wide cancer screens (no sample columns) | 3,000 (sampled from full database) |
+| COSMIC v103 (NonCodingVariants) [@COSMIC] | Aggregate non-coding somatic variants from COSMIC (no sample columns) | 3,000 (sampled from full database) |
 
 To confirm that mafsmith produces equivalent output to vcf2maf when both tools use the same annotation engine, we also ran an end-to-end pipeline comparison using Ensembl VEP 112 for both tools with the same indexed VEP 112 cache. We selected 23 representative datasets spanning all major caller types in Table 1 (20 GRCh38 datasets; 3 representative samples from the GRCh37 ICGC PCAWG consensus callset), sampling 2,000 variants per dataset, and compared MAF output from mafsmith + VEP 112 versus vcf2maf + VEP 112 in strict comparison mode. `Variant_Classification` was excluded from this comparison because even with identical VEP output, mafsmith and vcf2maf.pl differ in how they handle regulatory-feature CSQ entries (ENSR-prefixed IDs) — mafsmith excludes these from transcript ranking while vcf2maf.pl includes them — producing approximately 1 classification difference per 3,000 variants at gene-boundary regions; this does not affect allele-level conversion fields. Across all 23 datasets and both genome builds, mafsmith and vcf2maf produced 0 conversion-field differences, confirming that the two tools are interchangeable as drop-in replacements when using the same VEP annotation cache.
 
@@ -259,13 +257,13 @@ mafsmith source code and release binaries are available at [github.com/nf-osi/ma
 
 Validation and benchmark VCF datasets used in this work:
 
-- **NF Data Portal** Validation VCF files from multiple callers (syn31624545, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637). Available at [nf.synapse.org](https://nf.synapse.org).
-- **GIAB HG008 somatic (NYGC pipeline, GRCh38):** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available from the [GIAB HG008 NYGC-somatic-pipeline FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/).
-- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38):** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available from the [SEQC2 Somatic Mutation WG FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/).
-- **COLO829 somatic SV truth set (hg38):** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Available on [Zenodo record 7515830](https://zenodo.org/records/7515830).
-- **GIAB germline benchmarks (HG001–HG007, GRCh38):** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking and validation. Available from the [GIAB release FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/).
-- **COSMIC v103 (GRCh38):** Genome Screens Mutant (Normal) and Non-Coding Variants VCFs used for validation of annotation-database VCF format handling. Available under the COSMIC licence from the [COSMIC download portal](https://cancer.sanger.ac.uk/cosmic/download).
-- **ICGC PCAWG cell-line VCFs (GRCh37):** DKFZ SNV/MNV somatic VCFs for HCC1143 and HCC1954 cell lines from the ICGC Pan-Cancer Analysis of Whole Genomes (PCAWG) open data release. Available through the [ICGC-ARGO open-access S3 endpoint](https://object.genomeinformatics.org) (bucket: `icgc25k-open`; no sign request required for open-tier data).
+- **NF Data Portal** [@NFDataPortal] Validation VCF files from multiple callers (syn31624545, syn31624535, syn31624939, syn68172710, syn21296193, syn6840402, syn6039268, syn31624525, syn31624637). Available at [nf.synapse.org](https://nf.synapse.org). <!-- TODO: cite the specific NF studies that contributed each cohort -->
+- **GIAB HG008 somatic (NYGC pipeline, GRCh38)** [@GIABv4]**:** Paired tumor/normal (HG008-T / HG008-N) MuTect2 and Strelka2 VCFs. Available from the [GIAB HG008 NYGC-somatic-pipeline FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data_somatic/HG008/Liss_lab/analysis/NYGC-somatic-pipeline_20240412/GRCh38-GIABv3/).
+- **SEQC2 WGS somatic (HCC1395 / HCC1395BL, GRCh38)** [@SEQC2HCC1395]**:** Paired tumor/normal MuTect2, Strelka2, and SomaticSniper VCFs from the FDA Sequencing Quality Control Phase II (SEQC2) Somatic Mutation Working Group. Available from the [SEQC2 Somatic Mutation WG FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/seqc/Somatic_Mutation_WG/).
+- **COLO829 somatic SV truth set (hg38)** [@COLO829]**:** Somatic structural variant truth set for the COLO829 melanoma cell line. Lift-over to GRCh38: `truthset_somaticSVs_COLO829_hg38lifted.vcf`. Available on [Zenodo record 7515830](https://zenodo.org/records/7515830).
+- **GIAB germline benchmarks (HG001–HG007, GRCh38)** [@GIABv4]**:** NIST GIAB v4.2.1 benchmark VCFs used for conversion-speed benchmarking and validation. Available from the [GIAB release FTP directory](https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/).
+- **COSMIC v103 (GRCh38)** [@COSMIC]**:** Genome Screens Mutant (Normal) and Non-Coding Variants VCFs used for validation of annotation-database VCF format handling. Available under the COSMIC licence from the [COSMIC download portal](https://cancer.sanger.ac.uk/cosmic/download).
+- **ICGC PCAWG cell-line VCFs (GRCh37)** [@PCAWG]**:** DKFZ SNV/MNV somatic VCFs for HCC1143 and HCC1954 cell lines from the ICGC Pan-Cancer Analysis of Whole Genomes (PCAWG) open data release. Available through the [ICGC-ARGO open-access S3 endpoint](https://object.genomeinformatics.org) (bucket: `icgc25k-open`; no sign request required for open-tier data).
 
 
 ---
