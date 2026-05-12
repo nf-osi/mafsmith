@@ -1,18 +1,27 @@
 ---
 title: "mafsmith: a Rust reimplementation of vcf2maf"
-author:
-  - name: Robert Allaway
-    affiliation: 1
-affiliations:
-  - id: 1
-    name: Sage Bionetworks, Seattle, WA, USA
-corresponding-author: "robert.allaway@sagebionetworks.org"
+author: "Robert Allaway^1^"
 bibliography: references.bib
 link-citations: true
 csl: https://www.zotero.org/styles/nature
 nocite: |
   @MuTect2, @Strelka2, @FreeBayes, @DRAGEN, @Manta, @TCGA
+header-includes:
+  - \usepackage{newunicodechar}
+  - \newunicodechar{≠}{\ensuremath{\neq}}
+  - \newunicodechar{≥}{\ensuremath{\geq}}
+  - \newunicodechar{≤}{\ensuremath{\leq}}
+  - \newunicodechar{→}{\ensuremath{\rightarrow}}
+  - \newunicodechar{−}{\ensuremath{-}}
+  - \newunicodechar{₂}{\textsubscript{2}}
+  - \newunicodechar{₃}{\textsubscript{3}}
+  - \usepackage{xurl}
+  - \AtBeginEnvironment{longtable}{\footnotesize}
 ---
+
+^1^ Sage Bionetworks, Seattle, WA, USA
+
+**Corresponding author:** robert.allaway@sagebionetworks.org
 
 ## Abstract
 
@@ -28,7 +37,7 @@ The standard tool for this conversion is vcf2maf [@vcf2maf]. vcf2maf is a Perl s
 
 However, vcf2maf has performance limitations, described further in the results section. For large cohorts of hundreds or thousands of samples, this becomes a major computational burden. The dependency on a compatible Perl + VEP + reference database stack can also create significant installation challenges. Recent development of fastVEP [@Huang2026], a reimplementation of VEP's core annotation logic in the Rust programming language, substantially reduces annotation time, achieving up to 130-fold speedup over the original Perl VEP while maintaining complete concordance. However, the conversion step itself (allele normalisation, genotype parsing, field mapping) still requires vcf2maf.
 
-Here we describe mafsmith, a complete rewrite of vcf2maf in Rust that pairs naturally with fastVEP to replace the entire vcf2maf + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics and native parallelism to achieve throughput that is not possuble with the standard implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf from first principles, targeting field-for-field identical output. We validate all four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, and `maf2maf`) against their reference Perl counterparts, demonstrate 79.4-fold speedup for the `vcf2maf` conversion step, and describe the specific edge cases and caller-specific conventions that required careful evaluation to achieve full concordance.
+Here we describe mafsmith, a complete rewrite of vcf2maf in Rust that pairs naturally with fastVEP to replace the entire vcf2maf + VEP stack with a single, self-contained toolchain. Both tools exploit Rust's performance characteristics and native parallelism to achieve throughput that is not possible with the standard implementations. mafsmith reimplements the allele-normalisation and field-mapping logic of vcf2maf from first principles, targeting field-for-field identical output. We validate all four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, and `maf2maf`) against their reference Perl counterparts, demonstrate 79.4-fold speedup for the `vcf2maf` conversion step, and describe the specific edge cases and caller-specific conventions that required careful evaluation to achieve full concordance.
 
 ---
 
@@ -69,7 +78,7 @@ VCF alleles are left-aligned and trimmed using a prefix/suffix-stripping approac
 mafsmith implements vcf2maf logic for determining `Tumor_Seq_Allele1` and `Tumor_Seq_Allele2` from VCF FORMAT fields. This includes:
 
 - **GT-based allele assignment**: GT allele indices are sorted; the minimum index determines Allele1 (REF for heterozygous, ALT for homozygous-alt).
-- **Depth-based hom-alt inference**: when GT is a no-call (`./.'`) or homozygous-reference (`0/0`), allele assignment falls back to AD-based VAF; VAF ≥ 0.7 is treated as homozygous-alt. This matches vcf2maf behaviour across DRAGEN, MuTect2, and GVCF-style callers.
+- **Depth-based hom-alt inference**: when GT is a no-call (`./.`) or homozygous-reference (`0/0`), allele assignment falls back to AD-based VAF; VAF ≥ 0.7 is treated as homozygous-alt. This matches vcf2maf behaviour across DRAGEN, MuTect2, and GVCF-style callers.
 - **VAF override**: for paired tumour/normal VCFs, when GT indicates heterozygous but VAF ≥ 0.7 (suggesting caller under-calling), Allele1 is overridden to ALT, matching vcf2maf. This override is suppressed for single-sample VCFs (absent normal column).
 - **`--strict` mode**: when AD arrays are shorter than the expected `1 + n_alts` length (a GATK behaviour for trimmed multi-allelic sites), `--strict` outputs `.` for all depth fields and suppresses depth-based allele calling, exactly matching vcf2maf. In default mode, mafsmith extracts whatever depth information is available.
 - **Strelka2 somatic FORMAT fields**: Strelka2 somatic VCFs lack a GT field and use caller-specific depth fields (AU/CU/GU/TU for SNVs, TAR/TIR for indels). mafsmith extracts depth counts from these fields and infers het/hom-alt from VAF.

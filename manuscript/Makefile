@@ -2,7 +2,7 @@ SRC      := manuscript.md
 BIB      := references.bib
 OUT_DIR  := build
 
-PANDOC_FLAGS := --citeproc --bibliography=$(BIB) --standalone
+PANDOC_FLAGS := --citeproc --bibliography=$(BIB) --standalone --from=markdown-smart
 
 .PHONY: all html pdf docx clean
 
