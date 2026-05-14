@@ -1,5 +1,7 @@
 # mafsmith
 
+[![rewrites.bio - Follows best practice principles for rewriting bioinformatics tools with AI](https://rewrites.bio/badges/rewrites-bio.svg)](https://rewrites.bio)
+
 A complete, fast rewrite of [vcf2maf](https://github.com/mskcc/vcf2maf) in Rust, designed as a drop-in replacement.
 
 mafsmith reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl and uses [fastVEP](https://github.com/Ensembl/ensembl-vep) for annotation. All four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, `maf2maf`) have been validated to 0 conversion-field differences against their reference Perl counterparts across 15+ caller types and 6 representative datasets.
