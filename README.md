@@ -10,6 +10,14 @@ mafsmith reimplements the full allele-normalisation and field-mapping logic of v
 
 mafsmith is a Rust-based adaptation of the design, field conventions, and edge-case handling from [vcf2maf](https://github.com/mskcc/vcf2maf) by [@ckandoth](https://github.com/ckandoth) (ORCID: [0000-0002-1345-3573](https://orcid.org/0000-0002-1345-3573)).
 
+If you use mafsmith in published work, please also cite the original vcf2maf:
+
+> Kandoth, C. (2020). mskcc/vcf2maf: vcf2maf v1.6. Zenodo. https://doi.org/10.5281/zenodo.593251
+
+## AI assistance
+
+mafsmith was implemented in Rust using Anthropic's Claude Sonnet 4.6 language model, assisted by the Claude Code CLI. Development followed an iterative cycle of implementation and validation: after each implementation pass, mafsmith output was compared field-by-field to vcf2maf output on real-world VCFs representing a diverse panel of sequencing platforms, variant callers, and VCF conventions. Discrepancies were diagnosed to their root cause and resolved in targeted fixes before the next validation cycle. Correctness was established entirely by output comparison against the reference Perl implementation on real data — not by trusting AI-generated logic directly. The datasets in the Validation section below are both the performance evaluation corpora and the data against which the conversion logic was defined and refined.
+
 ## Performance
 
 Benchmarked on 7 GIAB NIST v4.2.1 GRCh38 samples (HG001–HG007, ~3.9–4.0M variants each),
@@ -172,7 +180,7 @@ mafsmith maf2maf \
 
 ### vcf2maf
 
-Validated to 0 conversion-field mismatches in `--strict` mode against `vcf2maf.pl --inhibit-vep` across the following caller types:
+Validated to 0 conversion-field mismatches in `--strict` mode against `vcf2maf.pl --inhibit-vep` (bioconda `ensembl-vep/vcf2maf`, v1.6 series) across the following caller types:
 
 | Caller | VCF type | Source |
 |--------|----------|--------|
@@ -194,7 +202,7 @@ Validated to 0 conversion-field mismatches in `--strict` mode against `vcf2maf.p
 | COSMIC v103 (GenomeScreensMutant) | Aggregate somatic mutations from genome-wide cancer screens (no sample columns) | COSMIC |
 | COSMIC v103 (NonCodingVariants) | Aggregate non-coding somatic variants (no sample columns) | COSMIC |
 
-When run with the same Ensembl VEP 112 annotation cache, mafsmith produces 0 conversion differences versus `vcf2maf.pl` across 23 representative datasets (GRCh38 and GRCh37).
+When run with the same Ensembl VEP 112 or VEP 115 annotation cache, mafsmith produces 0 conversion differences versus `vcf2maf.pl` across 23 representative datasets (GRCh38 and GRCh37). Last validated: 2026-05.
 
 ### maf2vcf, vcf2vcf, maf2maf
 
