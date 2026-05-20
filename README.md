@@ -16,11 +16,11 @@ Benchmarked on 7 GIAB NIST v4.2.1 GRCh38 samples (HG001–HG007, ~3.9–4.0M var
 conversion step only (`--skip-annotation` / `--inhibit-vep`), on an AWS c6a.4xlarge
 (AMD EPYC 7R13, 16 vCPU, 30 GiB RAM):
 
-| Tool | Mean time | Variants/s | Speedup |
-|------|-----------|-----------|---------|
-| `mafsmith` (16-core) | 7.050 ± 0.371 s | ~559,000 | **79.4×** |
-| `mafsmith` (1-core) | 11.755 ± 0.462 s | ~335,000 | **47.6×** |
-| `vcf2maf.pl --inhibit-vep` | 559.073 ± 17.016 s | ~7,000 | — |
+| Tool                       | Mean time          | Variants/s | Speedup   |
+| -------------------------- | ------------------ | ---------- | --------- |
+| `mafsmith` (16-core)       | 7.050 ± 0.371 s    | ~559,000   | **79.4×** |
+| `mafsmith` (1-core)        | 11.755 ± 0.462 s   | ~335,000   | **47.6×** |
+| `vcf2maf.pl --inhibit-vep` | 559.073 ± 17.016 s | ~7,000     | —         |
 
 Full end-to-end pipeline (mafsmith + fastVEP vs. vcf2maf.pl + VEP): **25–83×** faster depending on VEP fork count.
 
@@ -95,18 +95,18 @@ mafsmith vcf2maf -i input.vcf -o output.maf --genome grch37
 
 #### Key options
 
-| Flag | Description |
-|------|-------------|
-| `--genome` | Reference assembly: `grch38` (default), `grch37`, `grcm39` (mouse, unvalidated) |
-| `--tumor-id` | MAF `Tumor_Sample_Barcode` (defaults to VCF sample column name) |
-| `--normal-id` | MAF `Matched_Norm_Sample_Barcode` |
-| `--vcf-tumor-id` | Sample column name in VCF for tumor |
-| `--vcf-normal-id` | Sample column name in VCF for normal |
-| `--custom-enst` | File of preferred Ensembl transcript IDs (one per line) |
-| `--retain-ann` | Comma-separated CSQ field names to pass through to MAF |
-| `--skip-annotation` | Use existing CSQ annotations in VCF (skips fastVEP) |
-| `--strict` | Match `vcf2maf.pl` exactly: output `.` for depth fields when AD arrays are truncated |
-| `--min-hom-vaf` | VAF threshold for inferring homozygous-alt genotype (default: 0.7) |
+| Flag                | Description                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| `--genome`          | Reference assembly: `grch38` (default), `grch37`, `grcm39` (mouse, unvalidated)      |
+| `--tumor-id`        | MAF `Tumor_Sample_Barcode` (defaults to VCF sample column name)                      |
+| `--normal-id`       | MAF `Matched_Norm_Sample_Barcode`                                                    |
+| `--vcf-tumor-id`    | Sample column name in VCF for tumor                                                  |
+| `--vcf-normal-id`   | Sample column name in VCF for normal                                                 |
+| `--custom-enst`     | File of preferred Ensembl transcript IDs (one per line)                              |
+| `--retain-ann`      | Comma-separated CSQ field names to pass through to MAF                               |
+| `--skip-annotation` | Use existing CSQ annotations in VCF (skips fastVEP)                                  |
+| `--strict`          | Match `vcf2maf.pl` exactly: output `.` for depth fields when AD arrays are truncated |
+| `--min-hom-vaf`     | VAF threshold for inferring homozygous-alt genotype (default: 0.7)                   |
 
 ---
 
@@ -121,10 +121,10 @@ mafsmith maf2vcf \
   --genome grch38
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--genome` | Reference assembly (default: `grch38`) |
-| `--ref-fasta` | Override reference FASTA path |
+| Flag            | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `--genome`      | Reference assembly (default: `grch38`)             |
+| `--ref-fasta`   | Override reference FASTA path                      |
 | `--per-tn-vcfs` | Write one VCF per tumor/normal pair to a directory |
 
 ---
@@ -141,11 +141,11 @@ mafsmith vcf2vcf \
   --vcf-normal-id NORMAL
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--vcf-tumor-id` | Tumor sample column to select |
-| `--vcf-normal-id` | Normal sample column to select |
-| `--genome` | Reference assembly (default: `grch38`) |
+| Flag              | Description                            |
+| ----------------- | -------------------------------------- |
+| `--vcf-tumor-id`  | Tumor sample column to select          |
+| `--vcf-normal-id` | Normal sample column to select         |
+| `--genome`        | Reference assembly (default: `grch38`) |
 
 ---
 
@@ -222,11 +222,11 @@ Validated to 0 conversion-field differences against `maf2vcf.pl`, `vcf2vcf.pl`, 
 
 ## Supported genomes
 
-| Assembly | Species | Validation status |
-|----------|---------|-------------------|
-| GRCh38 | Human (hg38) | Validated (0 diffs across 21 caller types) |
-| GRCh37 | Human (hg19/b37) | Validated (0 diffs across 3 caller types) |
-| GRCm39 | Mouse | Available; not yet validated against vcf2maf.pl |
+| Assembly | Species          | Validation status                               |
+| -------- | ---------------- | ----------------------------------------------- |
+| GRCh38   | Human (hg38)     | Validated (0 diffs across 21 caller types)      |
+| GRCh37   | Human (hg19/b37) | Validated (0 diffs across 3 caller types)       |
+| GRCm39   | Mouse            | Available; not yet validated against vcf2maf.pl |
 
 ## License
 
