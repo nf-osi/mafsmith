@@ -4,7 +4,7 @@
 
 A complete, fast rewrite of [vcf2maf](https://github.com/mskcc/vcf2maf) in Rust, designed as a drop-in replacement.
 
-mafsmith reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl and uses [fastVEP](https://github.com/Ensembl/ensembl-vep) for annotation. All four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, `maf2maf`) have been validated to 0 conversion-field differences against their reference Perl counterparts across 15+ caller types and 6 representative datasets.
+mafsmith reimplements the full allele-normalisation and field-mapping logic of vcf2maf.pl and uses [fastVEP](https://github.com/Huang-lab/fastVEP) instead of [VEP](https://github.com/Ensembl/ensembl-vep) for annotation. All four conversion subcommands (`vcf2maf`, `maf2vcf`, `vcf2vcf`, `maf2maf`) have been validated to 0 conversion-field differences against their reference Perl counterparts across 15+ caller types and 6 representative datasets.
 
 ## Acknowledgements
 
@@ -160,11 +160,11 @@ mafsmith maf2maf \
   --genome grch38
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--genome` | Reference assembly (default: `grch38`) |
-| `--custom-enst` | File of preferred Ensembl transcript IDs |
-| `--fastvep-path` | Override fastVEP binary path |
+| Flag             | Description                              |
+| ---------------- | ---------------------------------------- |
+| `--genome`       | Reference assembly (default: `grch38`)   |
+| `--custom-enst`  | File of preferred Ensembl transcript IDs |
+| `--fastvep-path` | Override fastVEP binary path             |
 
 ---
 
@@ -174,25 +174,25 @@ mafsmith maf2maf \
 
 Validated to 0 conversion-field mismatches in `--strict` mode against `vcf2maf.pl --inhibit-vep` across the following caller types:
 
-| Caller | VCF type | Source |
-|--------|----------|--------|
-| DeepVariant 1.2.0 | Single-sample gVCF (`GT=0/0`/`./.`), with and without `VAF` field | syn31624545; syn4988483 |
-| GATK MuTect2 | Single-sample GRCh38 | syn64156972; syn31624525 |
-| GATK MuTect2 (paired T/N) | Paired tumor/normal (`GT:AD:AF:DP:F1R2:F2R1:SB`) | GIAB HG008; SEQC2 HCC1395 |
-| FreeBayes | Single-sample | syn31624535 |
-| Strelka2 germline | `variants.vcf` and `genome.vcf` formats | syn31624939; syn31624637 |
-| Strelka2 somatic SNVs | Paired T/N (`AU`/`CU`/`GU`/`TU` depth fields) | GIAB HG008; SEQC2 HCC1395 |
-| Strelka2 somatic indels | Paired T/N (`TAR`/`TIR` depth fields) | syn68172710; GIAB HG008 |
-| SV callers (Manta/DELLY) | SV-only (BND, DEL, DUP, INV symbolic ALTs) | syn21296193 |
-| VarScan2 somatic | Paired T/N (`RD`+`AD` FORMAT) | syn6840402 |
-| VarDict | Paired T/N (`RD` strand-bias field alongside `AD`) | syn6039268 |
-| SomaticSniper | Paired T/N (`DP4`+`BCOUNT` FORMAT, no `AD`) | SEQC2 HCC1395 |
-| DKFZ SNV caller | Paired T/N (`GT:DP:DP4`, GRCh37, no chr prefix) | ICGC PCAWG |
-| GIAB germline benchmarks (HG001–HG007) | Multi-caller consensus (`ADALL` field) | NIST v4.2.1 |
-| ICGC PCAWG consensus SNV/MNV | Consensus VCF (depth in INFO, no FORMAT), GRCh37 | 1,902 samples |
-| DepMap CCLE WGS | GATK MuTect2 single-sample, hg38 | 802 samples |
-| COSMIC v103 (GenomeScreensMutant) | Aggregate somatic mutations from genome-wide cancer screens (no sample columns) | COSMIC |
-| COSMIC v103 (NonCodingVariants) | Aggregate non-coding somatic variants (no sample columns) | COSMIC |
+| Caller                                 | VCF type                                                                        | Source                    |
+| -------------------------------------- | ------------------------------------------------------------------------------- | ------------------------- |
+| DeepVariant 1.2.0                      | Single-sample gVCF (`GT=0/0`/`./.`), with and without `VAF` field               | syn31624545; syn4988483   |
+| GATK MuTect2                           | Single-sample GRCh38                                                            | syn64156972; syn31624525  |
+| GATK MuTect2 (paired T/N)              | Paired tumor/normal (`GT:AD:AF:DP:F1R2:F2R1:SB`)                                | GIAB HG008; SEQC2 HCC1395 |
+| FreeBayes                              | Single-sample                                                                   | syn31624535               |
+| Strelka2 germline                      | `variants.vcf` and `genome.vcf` formats                                         | syn31624939; syn31624637  |
+| Strelka2 somatic SNVs                  | Paired T/N (`AU`/`CU`/`GU`/`TU` depth fields)                                   | GIAB HG008; SEQC2 HCC1395 |
+| Strelka2 somatic indels                | Paired T/N (`TAR`/`TIR` depth fields)                                           | syn68172710; GIAB HG008   |
+| SV callers (Manta/DELLY)               | SV-only (BND, DEL, DUP, INV symbolic ALTs)                                      | syn21296193               |
+| VarScan2 somatic                       | Paired T/N (`RD`+`AD` FORMAT)                                                   | syn6840402                |
+| VarDict                                | Paired T/N (`RD` strand-bias field alongside `AD`)                              | syn6039268                |
+| SomaticSniper                          | Paired T/N (`DP4`+`BCOUNT` FORMAT, no `AD`)                                     | SEQC2 HCC1395             |
+| DKFZ SNV caller                        | Paired T/N (`GT:DP:DP4`, GRCh37, no chr prefix)                                 | ICGC PCAWG                |
+| GIAB germline benchmarks (HG001–HG007) | Multi-caller consensus (`ADALL` field)                                          | NIST v4.2.1               |
+| ICGC PCAWG consensus SNV/MNV           | Consensus VCF (depth in INFO, no FORMAT), GRCh37                                | 1,902 samples             |
+| DepMap CCLE WGS                        | GATK MuTect2 single-sample, hg38                                                | 802 samples               |
+| COSMIC v103 (GenomeScreensMutant)      | Aggregate somatic mutations from genome-wide cancer screens (no sample columns) | COSMIC                    |
+| COSMIC v103 (NonCodingVariants)        | Aggregate non-coding somatic variants (no sample columns)                       | COSMIC                    |
 
 When run with the same Ensembl VEP 112 annotation cache, mafsmith produces 0 conversion differences versus `vcf2maf.pl` across 23 representative datasets (GRCh38 and GRCh37).
 
@@ -200,14 +200,14 @@ When run with the same Ensembl VEP 112 annotation cache, mafsmith produces 0 con
 
 Validated to 0 conversion-field differences against `maf2vcf.pl`, `vcf2vcf.pl`, and `maf2maf.pl` across 6 datasets (2,000 variants each):
 
-| Dataset | Genome | `maf2vcf` | `vcf2vcf` | `maf2maf` |
-|---------|--------|-----------|-----------|-----------|
-| SEQC2 HCC1395, GATK MuTect2 | GRCh38 | 0 diffs | 0 diffs | 0 diffs |
-| SEQC2 HCC1395, Strelka2 somatic | GRCh38 | 0 diffs | 0 diffs | — |
-| SEQC2 HCC1395, SomaticSniper | GRCh38 | 0 diffs | 0 diffs | — |
-| GIAB HG008, GATK MuTect2 | GRCh38 | 0 diffs | 0 diffs | 0 diffs |
-| GIAB HG001 germline benchmark | GRCh38 | 0 diffs | 0 diffs | — |
-| PCAWG consensus (0009b464) | GRCh37 | 0 diffs | 0 diffs | 0 diffs |
+| Dataset                         | Genome | `maf2vcf` | `vcf2vcf` | `maf2maf` |
+| ------------------------------- | ------ | --------- | --------- | --------- |
+| SEQC2 HCC1395, GATK MuTect2     | GRCh38 | 0 diffs   | 0 diffs   | 0 diffs   |
+| SEQC2 HCC1395, Strelka2 somatic | GRCh38 | 0 diffs   | 0 diffs   | —         |
+| SEQC2 HCC1395, SomaticSniper    | GRCh38 | 0 diffs   | 0 diffs   | —         |
+| GIAB HG008, GATK MuTect2        | GRCh38 | 0 diffs   | 0 diffs   | 0 diffs   |
+| GIAB HG001 germline benchmark   | GRCh38 | 0 diffs   | 0 diffs   | —         |
+| PCAWG consensus (0009b464)      | GRCh37 | 0 diffs   | 0 diffs   | 0 diffs   |
 
 ---
 
