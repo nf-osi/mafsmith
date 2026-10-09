@@ -1,0 +1,18 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=4000>
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total depth">
+##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description="Somatic">
+##INFO=<ID=SS,Number=1,Type=String,Description="Somatic status">
+##INFO=<ID=SSC,Number=1,Type=String,Description="Somatic score">
+##INFO=<ID=GPV,Number=1,Type=Float,Description="Germline p-value">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##FORMAT=<ID=RD,Number=1,Type=Integer,Description="Ref depth">
+##FORMAT=<ID=AD,Number=1,Type=Integer,Description="Alt depth">
+##FORMAT=<ID=FREQ,Number=1,Type=String,Description="Variant frequency">
+##FORMAT=<ID=DP4,Number=1,Type=String,Description="Strand read counts">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr1	1500	.	G	A	.	PASS	DP=90;SOMATIC;SS=2;SSC=40;GPV=1E0	GT:GQ:DP:RD:AD:FREQ:DP4	0/0:.:45:45:0:0%:20,25,0,0	0/1:.:45:30:15:33.33%:15,15,7,8
+chr1	1600	.	T	C	.	PASS	DP=60;SS=1;SSC=3;GPV=5.2E-12	GT:GQ:DP:RD:AD:FREQ:DP4	0/1:.:30:15:15:50%:7,8,7,8	0/1:.:30:14:16:53.33%:7,7,8,8
+chr1	1700	.	C	T	.	PASS	DP=70;SOMATIC;SS=2;SSC=60;GPV=1E0	GT:GQ:DP:RD:AD:FREQ:DP4	0/0:.:35:35:0:0%:17,18,0,0	1/1:.:30:2:30:93.75%:1,1,15,15

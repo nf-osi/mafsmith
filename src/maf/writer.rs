@@ -1,4 +1,4 @@
-use super::record::{MafRecord, STANDARD_COLUMNS};
+use super::record::{MafRecord, STANDARD_COLUMNS, TRAILING_COLUMN};
 use anyhow::Result;
 use std::io::Write;
 
@@ -7,11 +7,19 @@ pub struct MafWriter<W: Write> {
 }
 
 impl<W: Write> MafWriter<W> {
-    pub fn new(mut inner: W, extra_columns: Vec<String>) -> Result<Self> {
+    /// `extra_columns` (--retain-ann) go before `vcf_pos`; `retained_columns`
+    /// (--retain-info, --retain-fmt) after it, matching vcf2maf.pl.
+    pub fn new(
+        mut inner: W,
+        extra_columns: Vec<String>,
+        retained_columns: Vec<String>,
+    ) -> Result<Self> {
         writeln!(inner, "#version 2.4")?;
         let mut headers: Vec<&str> = STANDARD_COLUMNS.to_vec();
         let extra_refs: Vec<&str> = extra_columns.iter().map(|s| s.as_str()).collect();
         headers.extend_from_slice(&extra_refs);
+        headers.push(TRAILING_COLUMN);
+        headers.extend(retained_columns.iter().map(|s| s.as_str()));
         writeln!(inner, "{}", headers.join("\t"))?;
         Ok(Self { inner })
     }
@@ -84,10 +92,22 @@ impl<W: Write> MafWriter<W> {
         s!(record.vep_biotype);
         s!(record.vep_canonical);
         s!(record.vep_sift);
+        s!(record.vep_polyphen);
+        s!(record.filter);
+        s!(record.flanking_bps);
+        s!(record.vcf_id);
         // Last standard field — no trailing tab.
-        w.write_all(record.vep_polyphen.as_bytes())?;
+        w.write_all(record.vcf_qual.as_bytes())?;
         // Extra retained-annotation columns.
         for v in record.extra.values() {
+            w.write_all(b"\t")?;
+            w.write_all(v.as_bytes())?;
+        }
+        // vcf_pos comes after the retained-annotation columns (vcf2maf.pl order).
+        w.write_all(b"\t")?;
+        w.write_all(record.vcf_pos.as_bytes())?;
+        // Retained INFO/FORMAT columns come after vcf_pos (vcf2maf.pl order).
+        for v in &record.retained {
             w.write_all(b"\t")?;
             w.write_all(v.as_bytes())?;
         }

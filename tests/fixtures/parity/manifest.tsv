@@ -1,0 +1,11 @@
+# vcf2maf.pl parity suite: one fixture per line, tab-separated. "-" means empty.
+# name	vcf_tumor_id	vcf_normal_id	retain_info	retain_fmt	retain_ann
+mutect2_tn	TUMOR	NORMAL	DP,ECNT,TLOD,NALOD,STR,AF,NOT_PRESENT	GT,AD,AF,DP,F1R2,SB,NOT_PRESENT	-
+strelka_snv	TUMOR	NORMAL	SOMATIC,QSS,NT,SGT,DP	DP,FDP,AU,CU,GU,TU,AD,GT	-
+strelka_indel	TUMOR	NORMAL	SOMATIC,QSI,IC,RU	DP,DP2,TAR,TIR,TOR,AD,GT	-
+varscan	TUMOR	NORMAL	DP,SOMATIC,SS,SSC,GPV	GT,DP,RD,AD,FREQ,DP4	-
+somaticsniper	TUMOR	NORMAL	VT	GT,IGT,DP,DP4,BCOUNT,SS,SSC,AD	-
+iontorrent	SAMPLE1	-	AO,DP,HS,TYPE	GT,DP,FDP,RO,AO,AF,AD	-
+deepvariant	VA01	-	-	GT,GQ,DP,AD,VAF,PL	-
+delly_sv	TUMOR	NORMAL	SVTYPE,CHR2,END,PE,MAPQ,CT,PRECISE,IMPRECISE	GT,GQ,FT,DR,DV,RR,RV,AD,DP	-
+annotated	test_tumor	test_normal	SVTYPE,END,CHR2,SVLEN	GT,AD,DP,PR,SR	FLAGS,STRAND

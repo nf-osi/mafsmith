@@ -4,9 +4,11 @@ use crate::{
         csq::{shorten_hgvsp, splice_hgvsp_short, CsqEntry, CsqFormat, CsqLightEntry},
         depth::extract_depth,
         transcript::select_transcript_light,
+        vcf2maf_pl::PerlSamples,
     },
     cli::{Annotator, Vcf2mafArgs},
-    maf::{record::MafRecord, writer::MafWriter},
+    fasta::IndexedFasta,
+    maf::{record::MafRecord, retain::RetainSpec, writer::MafWriter},
     vcf::{
         normalization::{maf_positions, normalize},
         VcfReader,
@@ -111,11 +113,33 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         }
     };
 
+    // Open the reference FASTA once, for the reference-base lookups needed by
+    // flanking_bps (every variant) and SV secondary breakpoints. Positioned reads
+    // make a shared &IndexedFasta safe to use from the Rayon worker threads.
+    let ref_reader: Option<IndexedFasta> =
+        sv_ref_fasta
+            .as_deref()
+            .and_then(|p| match IndexedFasta::open(p) {
+                Ok(f) => Some(f),
+                Err(e) => {
+                    warn!(
+                        "Cannot read reference FASTA for base lookups ({e:#}); \
+                     flanking_bps will be empty"
+                    );
+                    None
+                }
+            });
+
     // Parse and convert
     info!("Converting annotated VCF to MAF...");
     let out_file = fs::File::create(&args.output_maf)
         .with_context(|| format!("Cannot create output MAF: {}", args.output_maf.display()))?;
-    let mut writer = MafWriter::new(BufWriter::new(out_file), args.retain_ann.clone())?;
+    let retain = RetainSpec::new(&args.retain_info, &args.retain_fmt, &args.retain_ann);
+    let mut writer = MafWriter::new(
+        BufWriter::new(out_file),
+        args.retain_ann.clone(),
+        retain.columns(),
+    )?;
 
     let in_file = fs::File::open(&annotated_path)
         .with_context(|| format!("Cannot open annotated VCF: {}", annotated_path.display()))?;
@@ -412,9 +436,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                     .map(|end_val| (chr2, end_val))
                     .or_else(|| raw_sv_alt.as_deref().and_then(parse_bnd_alt));
                 chr2_end.map(|(chr2, end_val)| {
-                    let ref2 = sv_ref_fasta
-                        .as_deref()
-                        .and_then(|fa| fasta_fetch_base(fa, &chr2, end_val))
+                    let ref2 = ref_reader
+                        .as_ref()
+                        .and_then(|fa| fa.fetch_base(&chr2, end_val))
                         .map(|c| c.to_string())
                         .unwrap_or_else(|| rec.ref_allele.clone());
                     (chr2, end_val, ref2)
@@ -454,12 +478,22 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
 
         // dbSNP: populate from VEP Existing_variation only (matching vcf2maf.pl behavior).
         // vcf2maf.pl does not use the VCF ID column for this field.
-        let dbsnp = transcript
-            .existing_variation
-            .split(',')
-            .filter(|s| s.starts_with("rs") && s[2..].chars().all(|c| c.is_ascii_digit()))
-            .collect::<Vec<_>>()
-            .join(",");
+        // A CSQ entry with no Existing_variation is reported as "novel"; with no CSQ
+        // entry at all the column stays empty.
+        let dbsnp = if transcript.existing_variation.is_empty() {
+            if light_entries.is_empty() {
+                String::new()
+            } else {
+                String::from("novel")
+            }
+        } else {
+            transcript
+                .existing_variation
+                .split(',')
+                .filter(|s| s.starts_with("rs") && s[2..].chars().all(|c| c.is_ascii_digit()))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
 
         // all_effects: semicolon-separated list for every annotated transcript.
         // Use light entries — avoids a full CsqEntry parse for each transcript.
@@ -494,35 +528,17 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // distinguish "extracted but unknowable" (→ ".") from "no depth source at all" (→ "").
         let tumor_has_depth = tumor_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
         let normal_has_depth = normal_depth.as_ref().map(|d| d.has_data()).unwrap_or(false);
-        // `no_depth_default`: value to use when a sample column exists in the VCF but has no
-        // depth FORMAT fields (e.g. GT-only). Matches vcf2maf.pl: total depth → "0", counts → ".".
-        // When there is no sample column at all, depth fields are empty (also matches vcf2maf.pl).
-        let fmt_depth = |d: Option<u32>, truncated: bool, no_depth_default: &'static str| -> String {
+        // A sample whose depth source yielded nothing at all is handled by the
+        // vcf2maf.pl port further down, so here no data means no sample column.
+        let fmt_depth = |d: Option<u32>, truncated: bool, has_depth: bool| -> String {
             if truncated {
                 ".".to_owned()
             } else {
                 d.map(|v| v.to_string()).unwrap_or_else(|| {
-                    if tumor_has_depth {
+                    if has_depth {
                         ".".to_owned()
-                    } else if tumor_col.is_some() {
-                        no_depth_default.to_owned()
                     } else {
                         String::new()
-                    }
-                })
-            }
-        };
-        let fmt_normal_depth = |d: Option<u32>, truncated: bool, no_depth_default: &'static str| -> String {
-            if normal_col.is_none() {
-                String::new()
-            } else if truncated {
-                ".".to_owned()
-            } else {
-                d.map(|v| v.to_string()).unwrap_or_else(|| {
-                    if normal_has_depth {
-                        ".".to_owned()
-                    } else {
-                        no_depth_default.to_owned()
                     }
                 })
             }
@@ -831,6 +847,53 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             })
             .unwrap_or_else(|| (norm.ref_allele.clone(), norm.ref_allele.clone()));
 
+        // vcf2maf.pl's own view of both samples. Needed for --retain-fmt, and for the
+        // depth columns of any sample where extract_depth found no allele counts:
+        // conventions it does not model (Delly RR/RV, DV, FA, CaVEMan, cgpPindel) and
+        // samples with no depth source at all, where vcf2maf.pl's blank-vs-"."-vs-"0"
+        // output depends on exactly which FORMAT fields exist.
+        let no_counts = |d: &Option<crate::annotation::depth::AlleleDepth>,
+                         vals: &Option<Vec<&str>>| {
+            vals.is_some()
+                && d.as_ref()
+                    .map_or(true, |d| d.ref_count.is_none() && d.alt_count.is_none())
+        };
+        let tumor_from_perl =
+            no_counts(&tumor_depth, &tumor_vals) && !(tumor_ad_truncated || tumor_alt_oor);
+        let normal_from_perl =
+            no_counts(&normal_depth, &normal_vals) && !(normal_ad_truncated || normal_alt_oor);
+        let perl_samples = (retain.has_fmt() || tumor_from_perl || normal_from_perl)
+            .then(|| PerlSamples::new(rec, tumor_vals.as_deref(), normal_vals.as_deref()));
+        let perl_depths = |sample: Option<&crate::annotation::vcf2maf_pl::PerlSample>| {
+            let p = perl_samples.as_ref().unwrap();
+            sample.map_or_else(Default::default, |s| {
+                (s.depth(), s.ref_count(), s.alt_count(p.var_idx))
+            })
+        };
+
+        let (t_depth, t_ref_count, t_alt_count) = if tumor_from_perl {
+            perl_depths(perl_samples.as_ref().unwrap().tumor.as_ref())
+        } else {
+            let truncated = tumor_ad_truncated || tumor_alt_oor;
+            let d = tumor_depth.as_ref();
+            (
+                fmt_depth(d.and_then(|d| d.depth()), false, tumor_has_depth),
+                fmt_depth(d.and_then(|d| d.ref_count), truncated, tumor_has_depth),
+                fmt_depth(d.and_then(|d| d.alt_count), truncated, tumor_has_depth),
+            )
+        };
+        let (n_depth, n_ref_count, n_alt_count) = if normal_from_perl {
+            perl_depths(perl_samples.as_ref().unwrap().normal.as_ref())
+        } else {
+            let truncated = normal_ad_truncated || normal_alt_oor;
+            let d = normal_depth.as_ref();
+            (
+                fmt_depth(d.and_then(|d| d.depth()), false, normal_has_depth),
+                fmt_depth(d.and_then(|d| d.ref_count), truncated, normal_has_depth),
+                fmt_depth(d.and_then(|d| d.alt_count), truncated, normal_has_depth),
+            )
+        };
+
         let record = MafRecord {
             // vcf2maf.pl: Hugo_Symbol = SYMBOL → Transcript_ID → "Unknown"
             hugo_symbol: if !transcript.symbol.is_empty() {
@@ -866,28 +929,12 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             exon_number: transcript.exon.clone(),
             // t_depth/n_depth: always report total depth (from DP) — not affected by AD truncation.
             // vcf2maf.pl suppresses only ref/alt counts when AD is truncated, not total depth.
-            t_depth: fmt_depth(tumor_depth.as_ref().and_then(|d| d.depth()), false, "0"),
-            t_ref_count: fmt_depth(
-                tumor_depth.as_ref().and_then(|d| d.ref_count),
-                tumor_ad_truncated || tumor_alt_oor,
-                ".",
-            ),
-            t_alt_count: fmt_depth(
-                tumor_depth.as_ref().and_then(|d| d.alt_count),
-                tumor_ad_truncated || tumor_alt_oor,
-                ".",
-            ),
-            n_depth: fmt_normal_depth(normal_depth.as_ref().and_then(|d| d.depth()), false, "0"),
-            n_ref_count: fmt_normal_depth(
-                normal_depth.as_ref().and_then(|d| d.ref_count),
-                normal_ad_truncated || normal_alt_oor,
-                ".",
-            ),
-            n_alt_count: fmt_normal_depth(
-                normal_depth.as_ref().and_then(|d| d.alt_count),
-                normal_ad_truncated || normal_alt_oor,
-                ".",
-            ),
+            t_depth,
+            t_ref_count,
+            t_alt_count,
+            n_depth,
+            n_ref_count,
+            n_alt_count,
             all_effects,
             vep_allele: transcript.allele.clone(),
             vep_gene: transcript.gene.clone(),
@@ -900,7 +947,17 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             },
             vep_sift: transcript.sift.clone(),
             vep_polyphen: transcript.polyphen.clone(),
+            // Pass-throughs from the source VCF record. flanking_bps and vcf_pos use
+            // the pre-normalization POS/REF, matching vcf2maf.pl.
+            filter: maf_filter(&rec.filter),
+            flanking_bps: flanking_bps(ref_reader.as_ref(), &rec.chrom, rec.pos, &rec.ref_allele),
+            vcf_id: maf_vcf_field(&rec.id),
+            vcf_qual: maf_vcf_field(&rec.qual),
+            vcf_pos: rec.pos.to_string(),
             extra,
+            // SV secondary rows clone this, so both breakpoints carry the same
+            // values — vcf2maf.pl writes the split VCF lines with identical INFO/FORMAT.
+            retained: retain.values(rec, perl_samples.as_ref()),
             ..Default::default()
         };
 
@@ -931,6 +988,10 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             secondary.tumor_seq_allele2 = sec_norm.alt_allele.clone();
             secondary.match_norm_seq_allele1 = sec_norm.ref_allele.clone();
             secondary.match_norm_seq_allele2 = sec_norm.ref_allele.clone();
+            // The secondary row describes the partner breakpoint, so its VCF-derived
+            // position and flanking bases come from there rather than from the record.
+            secondary.vcf_pos = bnd_pos.to_string();
+            secondary.flanking_bps = flanking_bps(ref_reader.as_ref(), chr2, *bnd_pos, ref2);
             output.push(secondary);
         }
         output.push(record);
@@ -1364,6 +1425,99 @@ fn resolve_sample_col(
     }
 }
 
-fn fasta_fetch_base(fasta_path: &Path, chrom: &str, pos: u64) -> Option<char> {
-    crate::fasta::fasta_fetch_base(fasta_path, chrom, pos)
+/// Reference bases spanning the VCF REF allele plus one flanking bp on either
+/// side — the region vcf2maf.pl pulls with `samtools faidx chr:(pos-1)-(pos+len(ref))`.
+fn flanking_bps(
+    ref_reader: Option<&IndexedFasta>,
+    chrom: &str,
+    vcf_pos: u64,
+    vcf_ref: &str,
+) -> String {
+    ref_reader
+        .and_then(|fa| {
+            fa.fetch_range(
+                chrom,
+                vcf_pos.saturating_sub(1),
+                vcf_pos + vcf_ref.len() as u64,
+            )
+        })
+        .unwrap_or_default()
+}
+
+/// VCF FILTER as reported in the MAF: "." when absent, otherwise semicolon-joined.
+///
+/// vcf2maf.pl additionally strips any `common_variant` tag and re-adds it from
+/// gnomAD subpopulation frequencies. mafsmith does not annotate gnomAD
+/// frequencies, so an input `common_variant` tag is passed through rather than
+/// dropped with nothing to replace it.
+fn maf_filter(vcf_filter: &str) -> String {
+    if vcf_filter.is_empty() {
+        return ".".to_owned();
+    }
+    let parts: Vec<&str> = vcf_filter
+        .split(|c| c == ',' || c == ';')
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.is_empty() {
+        ".".to_owned()
+    } else {
+        parts.join(";")
+    }
+}
+
+/// VCF ID/QUAL as reported in the MAF: "." when the field is empty.
+fn maf_vcf_field(value: &str) -> String {
+    if value.is_empty() {
+        ".".to_owned()
+    } else {
+        value.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_passthrough() {
+        assert_eq!(maf_filter("PASS"), "PASS");
+        assert_eq!(maf_filter("."), ".");
+        // An empty FILTER column becomes "." (vcf2maf.pl line 596)
+        assert_eq!(maf_filter(""), ".");
+        assert_eq!(
+            maf_filter("LowGQX;NoPassedVariantGTs"),
+            "LowGQX;NoPassedVariantGTs"
+        );
+        // Comma-delimited filters are re-joined with semicolons
+        assert_eq!(
+            maf_filter("clustered_events,germline"),
+            "clustered_events;germline"
+        );
+    }
+
+    #[test]
+    fn vcf_field_passthrough() {
+        assert_eq!(maf_vcf_field("rs123"), "rs123");
+        assert_eq!(maf_vcf_field("205"), "205");
+        assert_eq!(maf_vcf_field("."), ".");
+        assert_eq!(maf_vcf_field(""), ".");
+    }
+
+    #[test]
+    fn flanking_bps_empty_without_reference() {
+        assert_eq!(flanking_bps(None, "chr1", 100, "A"), "");
+    }
+
+    #[test]
+    fn bnd_alt_parsing() {
+        assert_eq!(
+            parse_bnd_alt("G]chr2:5000000]"),
+            Some(("chr2".to_owned(), 5000000))
+        );
+        assert_eq!(
+            parse_bnd_alt("[chr17:198982[A"),
+            Some(("chr17".to_owned(), 198982))
+        );
+        assert_eq!(parse_bnd_alt("<DEL>"), None);
+    }
 }

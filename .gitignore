@@ -9,6 +9,9 @@ tests/fixtures/expected/*_vcf2maf.maf
 *.fa
 *.fa.fai
 *.fa.gz
+# ...except the tiny synthetic genome of the vcf2maf.pl parity suite
+!tests/fixtures/parity/reference.fa
+!tests/fixtures/parity/reference.fa.fai
 
 # Pandoc build output
 manuscript/build/

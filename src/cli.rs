@@ -125,6 +125,15 @@ pub struct Vcf2mafArgs {
     #[arg(long, value_delimiter = ',')]
     pub retain_ann: Vec<String>,
 
+    /// Retain INFO fields as extra MAF columns (comma-separated INFO keys)
+    #[arg(long, value_delimiter = ',')]
+    pub retain_info: Vec<String>,
+
+    /// Retain FORMAT fields as extra MAF columns (comma-separated FORMAT keys).
+    /// Each key yields a t_<KEY> and an n_<KEY> column for the tumor and normal samples
+    #[arg(long, value_delimiter = ',')]
+    pub retain_fmt: Vec<String>,
+
     /// Skip fastVEP annotation (input VCF must already contain CSQ annotations)
     #[arg(long, default_value_t = false)]
     pub skip_annotation: bool,

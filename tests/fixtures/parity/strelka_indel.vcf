@@ -1,0 +1,15 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=4000>
+##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description="Somatic">
+##INFO=<ID=QSI,Number=1,Type=Integer,Description="Quality score">
+##INFO=<ID=IC,Number=1,Type=Integer,Description="Repeat count">
+##INFO=<ID=RU,Number=1,Type=String,Description="Repeat unit">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##FORMAT=<ID=DP2,Number=1,Type=Integer,Description="Depth tier2">
+##FORMAT=<ID=TAR,Number=2,Type=Integer,Description="Ref reads tier1,2">
+##FORMAT=<ID=TIR,Number=2,Type=Integer,Description="Indel reads tier1,2">
+##FORMAT=<ID=TOR,Number=2,Type=Integer,Description="Other reads tier1,2">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr1	1200	.	A	AT	.	PASS	SOMATIC;QSI=40;IC=3;RU=T	DP:DP2:TAR:TIR:TOR	30:30:30,31:0,0:0,1	35:35:20,21:12,12:2,3
+chr1	1300	.	GCA	G	.	PASS	SOMATIC;QSI=55;IC=0;RU=CA	DP:DP2:TAR:TIR:TOR	28:28:28,28:0,0:0,0	20:20:15,16:9,9:0,0
+chr1	1400	.	C	CTTT	.	LowDepth	SOMATIC;QSI=8	DP:DP2:TAR:TIR:TOR	6:6:6,6:0,0:0,0	5:5:1,1:4,4:0,0

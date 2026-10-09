@@ -104,9 +104,38 @@ mafsmith vcf2maf -i input.vcf -o output.maf --genome grch37
 | `--vcf-normal-id`   | Sample column name in VCF for normal                                                 |
 | `--custom-enst`     | File of preferred Ensembl transcript IDs (one per line)                              |
 | `--retain-ann`      | Comma-separated CSQ field names to pass through to MAF                               |
+| `--retain-info`     | Comma-separated INFO keys to add as MAF columns                                      |
+| `--retain-fmt`      | Comma-separated FORMAT keys to add as `t_<KEY>` / `n_<KEY>` MAF columns              |
 | `--skip-annotation` | Use existing CSQ annotations in VCF (skips fastVEP)                                  |
 | `--strict`          | Match `vcf2maf.pl` exactly: output `.` for depth fields when AD arrays are truncated |
 | `--min-hom-vaf`     | VAF threshold for inferring homozygous-alt genotype (default: 0.7)                   |
+
+#### Retained INFO and FORMAT columns
+
+`--retain-info` and `--retain-fmt` work like their `vcf2maf.pl` counterparts. The new
+columns come after `vcf_pos`: first one column per INFO key, then a `t_<KEY>` and an
+`n_<KEY>` column per FORMAT key. Missing values are left empty. As in `vcf2maf.pl`:
+
+- A name that already exists as a `vcf2maf.pl` column (case-insensitive) is skipped
+  with a warning, e.g. `--retain-info AF` or `--retain-fmt depth`.
+- FORMAT values are the ones `vcf2maf.pl` ends up with, not the raw VCF strings.
+  `t_AD` is the normalized `REF,ALT` depth list, built from `TAR`/`TIR`, `AU`–`TU`,
+  `BCOUNT`, `DP4`, `RO`/`AO` and so on when the caller writes no `AD`. `t_DP` is
+  rebuilt when it disagrees with those depths. `t_GT` becomes `./.`, `0/1` or `1/1`
+  when the tumor genotype is missing or unusable.
+- For split SVs, INFO is read after `vcf2maf.pl`'s SV rewrite: `SVTYPE` is removed,
+  and `CT`/`SVMETHOD` are renamed to `Frame`/`Method`.
+
+#### VCF pass-through columns
+
+Alongside the annotation columns, every row carries the source VCF's `FILTER`, `vcf_id`
+(ID), `vcf_qual` (QUAL), `vcf_pos` (POS before allele normalization), and `flanking_bps`
+(the REF allele plus 1 bp on either side, read from the reference). These are populated
+in all modes, including `--skip-annotation`.
+
+`flanking_bps` needs an uncompressed, `.fai`-indexed reference FASTA — `--ref-fasta`, or
+the one `mafsmith fetch` installs under `~/.mafsmith/<build>/reference.fa`. Without one,
+that single column is left empty and a warning is logged.
 
 ---
 
@@ -196,6 +225,17 @@ Validated to 0 conversion-field mismatches in `--strict` mode against `vcf2maf.p
 
 When run with the same Ensembl VEP 112 annotation cache, mafsmith produces 0 conversion differences versus `vcf2maf.pl` across 23 representative datasets (GRCh38 and GRCh37).
 
+### Parity test suite
+
+`tests/parity_test.rs` runs as part of `cargo test`. It converts nine small fixtures
+with mafsmith and compares every MAF column the two tools share against reference
+output from `vcf2maf.pl --inhibit-vep`, including the `--retain-info`,
+`--retain-fmt` and `--retain-ann` columns. The fixtures are Mutect2 paired T/N,
+Strelka2 SNV and indel, VarScan2, SomaticSniper, Ion Torrent, DeepVariant, Delly
+SVs, and a CSQ-annotated VCF. They sit on a small synthetic genome so the reference
+FASTA can be committed with them (`tests/fixtures/parity/`).
+`scripts/generate_parity_expected.sh` regenerates the `vcf2maf.pl` references.
+
 ### maf2vcf, vcf2vcf, maf2maf
 
 Validated to 0 conversion-field differences against `maf2vcf.pl`, `vcf2vcf.pl`, and `maf2maf.pl` across 6 datasets (2,000 variants each):
@@ -216,6 +256,8 @@ Validated to 0 conversion-field differences against `maf2vcf.pl`, `vcf2vcf.pl`, 
 - **Default vs. `--strict` mode**: when a caller emits a truncated `AD` array (fewer values than `REF + all ALTs`), mafsmith extracts available depth counts by default. Use `--strict` to output `.` for those fields instead, exactly matching `vcf2maf.pl`.
 - **SV secondary rows**: mafsmith emits secondary breakpoint rows with the actual partner chromosome and position. `vcf2maf.pl` leaves these fields blank (a known bug in the reference implementation).
 - **Multi-allelic tie-breaking**: when two ALTs have identical depth, tie-breaking may differ from `vcf2maf.pl` for a small number of variants (~4 per 50k-variant file).
+- **`all_effects`**: mafsmith lists `SYMBOL,Consequence,Variant_Classification,HGVSp` per transcript in CSQ order. `vcf2maf.pl` lists `SYMBOL,Consequence,HGVSp_Short,Transcript_ID,RefSeq;` per transcript, in its own effect-priority order.
+- **SV summary columns**: for VCFs with BND/TRA/DEL/DUP/INV records, `vcf2maf.pl` adds `Fusion`, `Method`, `Frame` and `CONSENSUS` columns. mafsmith does not emit them.
 - **Transcript selection at gene boundaries**: for variants near 5′/3′ UTR–flank and Intron/RNA boundaries, mafsmith and `vcf2maf.pl` may select different canonical transcripts, affecting `Variant_Classification` for ~2–5 variants per dataset. This reflects different gene-model versions rather than a conversion bug.
 
 ---
