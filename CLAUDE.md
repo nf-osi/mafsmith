@@ -61,6 +61,8 @@ target/release/mafsmith vcf2maf \
 | MAF omitted the VCF pass-through columns `FILTER`, `flanking_bps`, `vcf_id`, `vcf_qual`, `vcf_pos` (issue #2) | These columns come from the VCF record rather than from VEP, and were never added to the writer. `flanking_bps` additionally needs random access to the reference FASTA. | `record.rs`/`writer.rs`: new columns after `PolyPhen`, with `vcf_pos` last (vcf2maf.pl order); `fasta.rs`: `IndexedFasta` — an mmap-backed, `.fai`-indexed range reader opened once per run | Strelka germline chr1 (28,456 variants, 0 diffs incl. all 5 columns) |
 | Depth columns wrong for samples with no allele counts (found by the parity suite) | `extract_depth` does not model Delly `RR`/`RV`, `DV`, `FA`, CaVEMan or cgpPindel, and for samples with no depth source a heuristic printed `0`/`.`. vcf2maf.pl prints `0`/`.` only when an all-`.` AD array exists, and blanks otherwise (GT-only, Manta `PR:SR`, `AD=.`). | `vcf2maf.rs`: whenever `extract_depth` returns neither count (and no strict truncation applies), take all three depth columns from `vcf2maf_pl::PerlSamples`, a port of vcf2maf.pl's sample handling and `FixAlleleDepths` | parity suite (Delly, Manta, Mutect2 `AD=.`) |
 | `dbSNP_RS` empty instead of `novel` | vcf2maf.pl writes `novel` when the selected CSQ entry has no Existing_variation. mafsmith wrote an empty string. | `vcf2maf.rs`: `novel` when a CSQ entry exists but Existing_variation is empty; still empty when the record has no CSQ | parity suite (annotated fixture) |
+| Transcript chosen for the wrong ALT on multi-allelic sites annotated with `--allele_number` (found by the parity suite) | vcf2maf.pl drops CSQ entries whose `ALLELE_NUM` names an ALT other than the one it selected. mafsmith ignored `ALLELE_NUM`, so it could report the other ALT's consequence (e.g. `stop_gained` for T when the tumor carries G). mafsmith's own fastVEP/VEP runs do not write `ALLELE_NUM`, so this affected only pre-annotated input. | `vcf2maf.rs`: transcript selection now runs after ALT selection and skips CSQ entries for other ALTs; a record whose every entry belongs to another ALT is still emitted, unannotated, as in Perl | parity suite (`strict_edge_cases`) |
+| Last CSQ field unreadable | `CsqFormat::from_header_description` trimmed only `"` from the header line, so the last field was named e.g. `RefSeq">` and its values were never found (including by `--retain-ann`) | `csq.rs`: also trim the closing `>` | parity suite (`strict_edge_cases`) |
 | No `--retain-info` / `--retain-fmt` (issue #6) | Never implemented | `maf/retain.rs` (column list, vcf2maf.pl's case-insensitive de-dup against its *full* header) + `annotation/vcf2maf_pl.rs` (FORMAT values come from vcf2maf.pl's rewritten `%tum_info`/`%nrm_info`, INFO from its SV-rewritten line) | parity suite, all 9 fixtures |
 
 ### Retained INFO/FORMAT columns (`--retain-info`, `--retain-fmt`)
@@ -103,16 +105,20 @@ a 5 × 4 kb synthetic genome (`reference.fa`, committed through a `.gitignore` e
 - Add a scenario: add a `<name>.vcf` (hand-written, on `chr1`/`chr2`, `length=4000` contigs) and a
   manifest line. Then run `python3 scripts/build_parity_fixtures.py`, which rebuilds `annotated.vcf`
   and the FASTA so it agrees with every REF, followed by `bash scripts/generate_parity_expected.sh`.
-- `KNOWN_DIFFERENCES` in the test lists the columns allowed to differ. At present that is only
-  `all_effects`. An entry there is a known gap and should be documented below.
+- `KNOWN_DIFFERENCES` in the test lists the columns allowed to differ. It is empty: every shared
+  column, including `all_effects` and the SV summary columns, must match. An entry there is a known
+  gap and should be documented below.
+- `strict_edge_cases` covers the Perl quirks that `--strict` reproduces: `ALLELE_NUM` filtering on a
+  multi-allelic site, the Fusion pair leaking to every row with the same `vcf_id` (here `.`), `<TRA>`
+  rows left out of the pairing, and an HGVSp carrying an HGVSc prefix.
 - `annotated.vcf` is generated from `integration_annotated.vcf`. SV records get `CHR2` added and the
   ALT-only BND is dropped, because vcf2maf.pl reads only `CHR2`, which would leave its secondary row
   with an empty Chromosome.
 
 ### Known remaining differences vs vcf2maf.pl
 
-- **`all_effects` format**: mafsmith writes `SYMBOL,Consequence,Variant_Classification,HGVSp` joined by `;` in CSQ order. vcf2maf.pl writes `SYMBOL,One_Consequence,HGVSp_Short,Transcript_ID,RefSeq;` per effect, sorted by biotype, then severity, then transcript length, and skips effects on other ALT alleles. Excluded from the parity suite.
-- **SV summary columns**: vcf2maf.pl appends `Fusion Method Frame CONSENSUS` after the `--retain-info` columns whenever it split any SV. mafsmith does not emit them, and the parity test ignores them in its header check.
+- **`all_effects` format (default mode only)**: mafsmith writes `SYMBOL,Consequence,Variant_Classification,HGVSp` joined by `;` in CSQ order. vcf2maf.pl writes `SYMBOL,One_Consequence,HGVSp,Transcript_ID,RefSeq;` per effect, sorted by biotype, then severity, then transcript length. `--strict` uses `vcf2maf_pl::all_effects`, a port with vcf2maf.pl's own priority tables, which deliberately differ from `transcript::biotype_rank` (e.g. a pseudogene biotype absent from its table ranks 10, not 8).
+- **SV summary columns (default mode only)**: vcf2maf.pl appends `Fusion Method Frame CONSENSUS` after the `--retain-info` columns whenever it split any SV. `--strict` reproduces this: a pre-scan of the input decides the header, and `backfill_fusion` rewrites the finished MAF. Fusion is keyed on `vcf_id`-`Tumor_Sample_Barcode` exactly as in Perl, so every row with ID `.` gets the gene pair of the ID-`.` SVs, SNVs included. `--strict` reproduces that bug on purpose.
 - **`--min-hom-vaf` is not wired**: the CLI flag defaults to 0.0 and is unused. Every hom-alt inference, including the `t_GT` that `--retain-fmt` writes for untyped tumors, uses vcf2maf.pl's default of 0.7.
 
 - **5'UTR vs 5'Flank** (chr1:3857566, chr1:3857574): Transcript selection picks different canonical isoform. Affects ~2 variants per dataset. Under investigation.

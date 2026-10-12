@@ -76,6 +76,9 @@ pub struct MafRecord {
     /// Retained INFO then FORMAT values (--retain-info, --retain-fmt), written
     /// after `vcf_pos` in the order of `RetainSpec::columns`.
     pub retained: Vec<String>,
+    /// Not written: marks an SV breakpoint row whose Hugo_Symbol goes into the
+    /// Fusion column backfill (`--strict` with SVs only).
+    pub sv_fusion: bool,
 }
 
 pub const STANDARD_COLUMNS: &[&str] = &[

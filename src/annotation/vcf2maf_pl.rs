@@ -3,6 +3,9 @@
 //! the tumor/normal FORMAT handling — variant-allele selection, `FixAlleleDepths`
 //! and the genotype fix-ups.
 //!
+//! `all_effects` and the SV summary columns follow vcf2maf.pl here only under
+//! `--strict`; mafsmith's default `all_effects` format is its own.
+//!
 //! The FORMAT side is used for the `--retain-fmt` columns, which vcf2maf.pl reads
 //! from its rewritten per-sample hashes rather than from the raw VCF, and as the
 //! fallback for the depth columns when `depth::extract_depth` finds no allele
@@ -132,6 +135,269 @@ pub(crate) fn parse_info(info_line: &str) -> HashMap<&str, String> {
         cur.push_str(val);
     }
     info
+}
+
+/// Whether vcf2maf.pl's preprocessing pass splits this record into two breakpoint
+/// lines. Any such record in the VCF makes vcf2maf.pl add its SV summary columns.
+pub(crate) fn is_split_sv(info: &str, ref_allele: &str, alts: &[String]) -> bool {
+    (info.starts_with("SVTYPE") || info.contains(";SVTYPE"))
+        && split_sv_preprocess(info, ref_allele, alts).1.is_some()
+}
+
+/// `$var=~m/^<BND|DEL|DUP|INV>$/`: the rows whose Hugo_Symbol vcf2maf.pl pairs
+/// up for the Fusion column. The alternation binds loosely, so this is "starts
+/// with `<BND`, or contains DEL or DUP, or ends with `INV>`" — and `<TRA>` is out.
+pub(crate) fn is_fusion_var(var: &str) -> bool {
+    var.starts_with("<BND") || var.contains("DEL") || var.contains("DUP") || var.ends_with("INV>")
+}
+
+// ── all_effects ──────────────────────────────────────────────────────────────
+
+/// One CSQ entry as vcf2maf.pl's effect loop holds it, reduced to the fields
+/// that `all_effects` and its sort read.
+struct Effect {
+    symbol: String,
+    one_consequence: String,
+    hgvsp: String,
+    transcript_id: String,
+    refseq: String,
+    biotype_priority: u8,
+    effect_priority: u8,
+    transcript_length: f64,
+}
+
+/// vcf2maf.pl's `all_effects` column: `SYMBOL,One_Consequence,HGVSp,Transcript_ID,RefSeq;`
+/// for every CSQ entry of the selected ALT allele, sorted by biotype priority,
+/// then consequence severity, then longest transcript.
+///
+/// `var_idx` is the VCF index of the ALT vcf2maf.pl selected; entries whose
+/// ALLELE_NUM names another allele are skipped (only when VEP wrote ALLELE_NUM).
+pub(crate) fn all_effects(csq: &str, index: &HashMap<String, usize>, var_idx: usize) -> String {
+    let mut effects: Vec<Effect> = Vec::new();
+    for ann_line in perl_split(csq, ',') {
+        let parts = perl_split(ann_line, '|');
+        // VEP escapes ',' inside a field as '&'; vcf2maf.pl turns them back.
+        let get = |name: &str| -> String {
+            index
+                .get(name)
+                .and_then(|&i| parts.get(i))
+                .map(|v| v.replace('&', ","))
+                .unwrap_or_default()
+        };
+
+        let allele_num = get("ALLELE_NUM");
+        if perl_truthy(&allele_num) && perl_num(&allele_num) != var_idx as f64 {
+            continue;
+        }
+
+        let mut hgvsp = get("HGVSp");
+        if perl_truthy(&hgvsp) {
+            if let Some(p) = hgvsp.rfind(':') {
+                hgvsp = hgvsp[p + 1..].to_owned();
+            }
+        }
+        if perl_truthy(&hgvsp) && hgvsp.starts_with("c.") {
+            hgvsp = strip_hgvsc_prefix(&hgvsp);
+        }
+
+        let consequence = get("Consequence");
+        let mut terms = perl_split(&consequence, ',');
+        terms.sort_by_key(|t| effect_priority(t)); // stable, like Perl's mergesort
+        let one_consequence = if terms.is_empty() {
+            "intergenic_variant".to_owned()
+        } else {
+            terms[0].to_owned()
+        };
+
+        let cdna = get("cDNA_position");
+        let transcript_length = cdna
+            .rsplit_once('/')
+            .map(|(_, len)| len)
+            .filter(|len| !len.is_empty() && len.bytes().all(|b| b.is_ascii_digit()))
+            .map_or(0.0, |len| len.parse().unwrap_or(0.0));
+
+        let symbol = get("SYMBOL");
+        let biotype = get("BIOTYPE");
+        effects.push(Effect {
+            symbol: if perl_truthy(&symbol) {
+                symbol
+            } else {
+                String::new()
+            },
+            effect_priority: effect_priority(&one_consequence),
+            one_consequence,
+            hgvsp,
+            transcript_id: get("Feature"),
+            refseq: get("RefSeq"),
+            biotype_priority: biotype_priority(&biotype),
+            transcript_length,
+        });
+    }
+
+    effects.sort_by(|a, b| {
+        (a.biotype_priority, a.effect_priority)
+            .cmp(&(b.biotype_priority, b.effect_priority))
+            .then(b.transcript_length.total_cmp(&a.transcript_length))
+    });
+
+    let mut out = String::new();
+    for e in &effects {
+        if !(perl_truthy(&e.one_consequence) && perl_truthy(&e.transcript_id)) {
+            continue;
+        }
+        let truthy_or_empty = |s: &str| {
+            if perl_truthy(s) {
+                s.to_owned()
+            } else {
+                String::new()
+            }
+        };
+        out.push_str(&format!(
+            "{},{},{},{},{};",
+            e.symbol,
+            e.one_consequence,
+            truthy_or_empty(&e.hgvsp),
+            e.transcript_id,
+            truthy_or_empty(&e.refseq)
+        ));
+    }
+    out
+}
+
+/// `s/^.*\((p\.\S+)\)/$1/`: drop an HGVSc prefix such as `c.1A>G(p.Met1?)`.
+fn strip_hgvsc_prefix(s: &str) -> String {
+    // The greedy `.*` takes the rightmost "(p." that can still match.
+    for (i, _) in s.rmatch_indices("(p.") {
+        let run_end = s[i + 1..]
+            .find(char::is_whitespace)
+            .map_or(s.len(), |n| i + 1 + n);
+        // `\S+` after "p." needs at least one character before the ')'.
+        if let Some(j) = s[i + 4..run_end].rfind(')').map(|n| i + 4 + n) {
+            return format!("{}{}", &s[i + 1..j], &s[j + 1..]);
+        }
+    }
+    s.to_owned()
+}
+
+/// vcf2maf.pl `GetEffectPriority`.
+fn effect_priority(effect: &str) -> u8 {
+    match effect {
+        "transcript_ablation" | "exon_loss_variant" => 1,
+        "splice_donor_variant" | "splice_acceptor_variant" => 2,
+        "stop_gained" | "frameshift_variant" | "stop_lost" => 3,
+        "start_lost" | "initiator_codon_variant" => 4,
+        "disruptive_inframe_insertion"
+        | "disruptive_inframe_deletion"
+        | "conservative_inframe_insertion"
+        | "conservative_inframe_deletion"
+        | "inframe_insertion"
+        | "inframe_deletion"
+        | "protein_altering_variant" => 5,
+        "missense_variant" | "conservative_missense_variant" | "rare_amino_acid_variant" => 6,
+        "transcript_amplification" => 7,
+        "splice_region_variant"
+        | "splice_donor_5th_base_variant"
+        | "splice_donor_region_variant"
+        | "splice_polypyrimidine_tract_variant" => 8,
+        "start_retained_variant" | "stop_retained_variant" | "synonymous_variant" => 9,
+        "incomplete_terminal_codon_variant" => 10,
+        "coding_sequence_variant" | "mature_miRNA_variant" | "exon_variant" => 11,
+        "5_prime_UTR_variant"
+        | "5_prime_UTR_premature_start_codon_gain_variant"
+        | "3_prime_UTR_variant" => 12,
+        "non_coding_exon_variant" | "non_coding_transcript_exon_variant" => 13,
+        "non_coding_transcript_variant"
+        | "nc_transcript_variant"
+        | "intron_variant"
+        | "intragenic_variant"
+        | "INTRAGENIC" => 14,
+        "NMD_transcript_variant" => 15,
+        "upstream_gene_variant" | "downstream_gene_variant" => 16,
+        "TFBS_ablation"
+        | "TFBS_amplification"
+        | "TF_binding_site_variant"
+        | "regulatory_region_ablation"
+        | "regulatory_region_amplification"
+        | "regulatory_region_variant"
+        | "regulatory_region" => 17,
+        "feature_elongation" | "feature_truncation" => 18,
+        "intergenic_variant" | "intergenic_region" => 19,
+        _ => 20,
+    }
+}
+
+/// vcf2maf.pl `GetBiotypePriority`. Spelled out rather than pattern-matched:
+/// a pseudogene biotype missing from vcf2maf.pl's table ranks 10, not 8.
+fn biotype_priority(biotype: &str) -> u8 {
+    match biotype {
+        "protein_coding" => 1,
+        "LRG_gene" | "IG_C_gene" | "IG_D_gene" | "IG_J_gene" | "IG_LV_gene" | "IG_V_gene"
+        | "TR_C_gene" | "TR_D_gene" | "TR_J_gene" | "TR_V_gene" => 2,
+        "miRNA"
+        | "snRNA"
+        | "snoRNA"
+        | "ribozyme"
+        | "tRNA"
+        | "sRNA"
+        | "scaRNA"
+        | "rRNA"
+        | "scRNA"
+        | "lincRNA"
+        | "lncRNA"
+        | "bidirectional_promoter_lncrna"
+        | "bidirectional_promoter_lncRNA" => 3,
+        "known_ncrna" | "vaultRNA" | "macro_lncRNA" | "Mt_tRNA" | "Mt_rRNA" => 4,
+        "antisense"
+        | "antisense_RNA"
+        | "sense_intronic"
+        | "sense_overlapping"
+        | "3prime_overlapping_ncrna"
+        | "3prime_overlapping_ncRNA"
+        | "misc_RNA"
+        | "non_coding" => 5,
+        "regulatory_region"
+        | "disrupted_domain"
+        | "processed_transcript"
+        | "protein_coding_CDS_not_defined"
+        | "TEC" => 6,
+        "TF_binding_site"
+        | "CTCF_binding_site"
+        | "promoter_flanking_region"
+        | "enhancer"
+        | "promoter"
+        | "open_chromatin_region"
+        | "retained_intron"
+        | "nonsense_mediated_decay"
+        | "non_stop_decay"
+        | "ambiguous_orf" => 7,
+        "pseudogene"
+        | "processed_pseudogene"
+        | "polymorphic_pseudogene"
+        | "retrotransposed"
+        | "translated_processed_pseudogene"
+        | "translated_unprocessed_pseudogene"
+        | "transcribed_processed_pseudogene"
+        | "transcribed_unprocessed_pseudogene"
+        | "transcribed_unitary_pseudogene"
+        | "unitary_pseudogene"
+        | "unprocessed_pseudogene"
+        | "Mt_tRNA_pseudogene"
+        | "tRNA_pseudogene"
+        | "snoRNA_pseudogene"
+        | "snRNA_pseudogene"
+        | "scRNA_pseudogene"
+        | "rRNA_pseudogene"
+        | "misc_RNA_pseudogene"
+        | "miRNA_pseudogene"
+        | "IG_C_pseudogene"
+        | "IG_D_pseudogene"
+        | "IG_J_pseudogene"
+        | "IG_V_pseudogene"
+        | "TR_J_pseudogene"
+        | "TR_V_pseudogene" => 8,
+        "artifact" => 9,
+        _ => 10,
+    }
 }
 
 // ── FORMAT ───────────────────────────────────────────────────────────────────

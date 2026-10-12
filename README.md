@@ -107,7 +107,7 @@ mafsmith vcf2maf -i input.vcf -o output.maf --genome grch37
 | `--retain-info`     | Comma-separated INFO keys to add as MAF columns                                      |
 | `--retain-fmt`      | Comma-separated FORMAT keys to add as `t_<KEY>` / `n_<KEY>` MAF columns              |
 | `--skip-annotation` | Use existing CSQ annotations in VCF (skips fastVEP)                                  |
-| `--strict`          | Match `vcf2maf.pl` exactly: output `.` for depth fields when AD arrays are truncated |
+| `--strict`          | Match `vcf2maf.pl` exactly: output `.` for depth fields when AD arrays are truncated, write `all_effects` in `vcf2maf.pl`'s format and order, and add its SV summary columns (`Fusion Method Frame CONSENSUS`) |
 | `--min-hom-vaf`     | VAF threshold for inferring homozygous-alt genotype (default: 0.7)                   |
 
 #### Retained INFO and FORMAT columns
@@ -227,12 +227,14 @@ When run with the same Ensembl VEP 112 annotation cache, mafsmith produces 0 con
 
 ### Parity test suite
 
-`tests/parity_test.rs` runs as part of `cargo test`. It converts nine small fixtures
-with mafsmith and compares every MAF column the two tools share against reference
+`tests/parity_test.rs` runs as part of `cargo test`. It converts ten small fixtures
+with mafsmith (`--strict`) and compares every MAF column the two tools share against reference
 output from `vcf2maf.pl --inhibit-vep`, including the `--retain-info`,
 `--retain-fmt` and `--retain-ann` columns. The fixtures are Mutect2 paired T/N,
 Strelka2 SNV and indel, VarScan2, SomaticSniper, Ion Torrent, DeepVariant, Delly
-SVs, and a CSQ-annotated VCF. They sit on a small synthetic genome so the reference
+SVs, a CSQ-annotated VCF, and a fixture for `--strict` edge cases (`ALLELE_NUM` on a
+multi-allelic site, SV IDs shared with other records, a `<TRA>`). No column is
+exempt from the comparison. They sit on a small synthetic genome so the reference
 FASTA can be committed with them (`tests/fixtures/parity/`).
 `scripts/generate_parity_expected.sh` regenerates the `vcf2maf.pl` references.
 
@@ -256,8 +258,8 @@ Validated to 0 conversion-field differences against `maf2vcf.pl`, `vcf2vcf.pl`, 
 - **Default vs. `--strict` mode**: when a caller emits a truncated `AD` array (fewer values than `REF + all ALTs`), mafsmith extracts available depth counts by default. Use `--strict` to output `.` for those fields instead, exactly matching `vcf2maf.pl`.
 - **SV secondary rows**: mafsmith emits secondary breakpoint rows with the actual partner chromosome and position. `vcf2maf.pl` leaves these fields blank (a known bug in the reference implementation).
 - **Multi-allelic tie-breaking**: when two ALTs have identical depth, tie-breaking may differ from `vcf2maf.pl` for a small number of variants (~4 per 50k-variant file).
-- **`all_effects`**: mafsmith lists `SYMBOL,Consequence,Variant_Classification,HGVSp` per transcript in CSQ order. `vcf2maf.pl` lists `SYMBOL,Consequence,HGVSp_Short,Transcript_ID,RefSeq;` per transcript, in its own effect-priority order.
-- **SV summary columns**: for VCFs with BND/TRA/DEL/DUP/INV records, `vcf2maf.pl` adds `Fusion`, `Method`, `Frame` and `CONSENSUS` columns. mafsmith does not emit them.
+- **`all_effects` (default mode)**: mafsmith lists `SYMBOL,Consequence,Variant_Classification,HGVSp` per transcript in CSQ order. `vcf2maf.pl` lists `SYMBOL,One_Consequence,HGVSp,Transcript_ID,RefSeq;` per transcript, sorted by biotype, severity and transcript length. `--strict` writes `vcf2maf.pl`'s format.
+- **SV summary columns (default mode)**: for VCFs with BND/TRA/DEL/DUP/INV records, `vcf2maf.pl` adds `Fusion`, `Method`, `Frame` and `CONSENSUS` columns. mafsmith adds them only with `--strict`, because doing so costs an extra pass over the input and, for `Fusion`, over the output.
 - **Transcript selection at gene boundaries**: for variants near 5′/3′ UTR–flank and Intron/RNA boundaries, mafsmith and `vcf2maf.pl` may select different canonical transcripts, affecting `Variant_Classification` for ~2–5 variants per dataset. This reflects different gene-model versions rather than a conversion bug.
 
 ---

@@ -1,0 +1,19 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=4000>
+##contig=<ID=chr2,length=4000>
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="SV type">
+##INFO=<ID=SVMETHOD,Number=1,Type=String,Description="Caller">
+##INFO=<ID=CHR2,Number=1,Type=String,Description="Partner chromosome">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position">
+##INFO=<ID=CT,Number=1,Type=String,Description="Connection type">
+##INFO=<ID=CONSENSUS,Number=1,Type=String,Description="Consensus sequence">
+##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. Format: Allele|Consequence|IMPACT|SYMBOL|Gene|Feature_type|Feature|BIOTYPE|EXON|INTRON|HGVSc|HGVSp|cDNA_position|CDS_position|Protein_position|Amino_acids|Codons|Existing_variation|ALLELE_NUM|DISTANCE|STRAND|CANONICAL|RefSeq">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	TUMOR	NORMAL
+chr2	2000	.	G	A	.	PASS	CSQ=A|missense_variant|MODERATE|GENEA|ENSGA|Transcript|ENST0000001|protein_coding|||ENST0000001.1:c.5G>A|ENSP0000001.1:p.Gly2Asp|5/900||||||1||1|YES|	GT:AD:DP	0/1:20,10:30	0/0:25,0:25
+chr2	2100	.	C	T,G	.	PASS	CSQ=T|stop_gained|HIGH|GENEC|ENSGC|Transcript|ENST0000003|protein_coding||||ENSP0000003.1:p.Arg4Ter|10/2000||||||1||1|YES|NM_3,G|non_coding_transcript_exon_variant||GENED|ENSGD|Transcript|ENST0000005|lncRNA|||||5/3000||||||2||1||,G|splice_region_variant&missense_variant|MODERATE|GENEC|ENSGC|Transcript|ENST0000003|protein_coding||||ENSP0000003.1:p.Arg4Gly|10/2000||||||2||1|YES|NM_3&NM_33,G|intron_variant||GENEC|ENSGC|Transcript|ENST0000004|protein_coding|||||||||||2||1||,G|missense_variant|MODERATE|GENEC|ENSGC|Transcript|ENST0000006|protein_coding||||ENSP0000006.1:c.12C>G(p.Arg4Gly)|12/5000||||||2||1||,G|upstream_gene_variant||GENEE|ENSGE|Transcript|ENST0000007|processed_pseudogene|||||||||||2|300|1||,G|regulatory_region_variant||||RegulatoryFeature|ENSR0000001|promoter|||||||||||2||||	GT:AD:DP	0/2:15,1,12:28	0/0:30,0,0:30
+chr2	2200	.	A	<DEL>	.	PASS	SVTYPE=DEL;SVMETHOD=TESTCALLER_v1.0;CHR2=chr2;END=2500;CT=3to5;CSQ=deletion|intron_variant&feature_truncation|MODIFIER|GENEF|ENSGF|Transcript|ENST0000008|protein_coding|||||||||||||1|YES|	GT:AD:DP	0/1:20,8:28	0/0:30,0:30
+chr2	2600	TRA_1	T	<TRA>	.	PASS	SVTYPE=TRA;SVMETHOD=TESTCALLER_v1.0;CHR2=chr1;END=3900;CT=5to3;CSQ=TRA|intergenic_variant|MODIFIER|||Transcript|||||||||||||||1||	GT:AD:DP	0/1:18,6:24	0/0:22,0:22
+chr2	2800	SV9	G	<DUP>	.	PASS	SVTYPE=DUP;CHR2=chr2;END=3000;CONSENSUS=ACGTACGT;CSQ=duplication|feature_elongation|MODIFIER|GENEG|ENSGG|Transcript|ENST0000009|protein_coding|||||||||||||1|YES|	GT:AD:DP	0/1:12,9:21	0/0:20,0:20

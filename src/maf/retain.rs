@@ -44,10 +44,15 @@ const VCF2MAF_PL_HEADER: &[&str] = &[
     "gnomADe_NFE_AF", "gnomADe_OTH_AF", "gnomADe_SAS_AF",
 ];
 
+/// Columns vcf2maf.pl appends after the `--retain-info` columns when the VCF
+/// contained any SV it split into two breakpoint lines.
+pub const SV_COLUMNS: [&str; 4] = ["Fusion", "Method", "Frame", "CONSENSUS"];
+
 /// The retained INFO and FORMAT columns, in output order.
 #[derive(Debug, Default, Clone)]
 pub struct RetainSpec {
-    /// INFO keys; each column is named after its key.
+    /// INFO keys; each column is named after its key. Includes vcf2maf.pl's SV
+    /// summary columns when they apply.
     info: Vec<String>,
     /// FORMAT columns, named `t_<KEY>` / `n_<KEY>`.
     fmt: Vec<String>,
@@ -56,7 +61,17 @@ pub struct RetainSpec {
 impl RetainSpec {
     /// Build the column list the way vcf2maf.pl does: INFO columns first, then a
     /// `t_`/`n_` pair per FORMAT key, skipping any name already in the header.
-    pub fn new(retain_info: &[String], retain_fmt: &[String], retain_ann: &[String]) -> Self {
+    ///
+    /// `sv_columns` appends `Fusion Method Frame CONSENSUS` after the INFO columns,
+    /// which vcf2maf.pl does whenever it split an SV. They are read from INFO like
+    /// any retained key (its preprocessing renamed `SVMETHOD`/`CT` to `Method`/`Frame`);
+    /// Fusion is backfilled after the whole MAF is written.
+    pub fn new(
+        retain_info: &[String],
+        retain_fmt: &[String],
+        retain_ann: &[String],
+        sv_columns: bool,
+    ) -> Self {
         let mut taken: HashSet<String> = VCF2MAF_PL_HEADER
             .iter()
             .map(|c| c.to_lowercase())
@@ -77,6 +92,11 @@ impl RetainSpec {
             })
             .cloned()
             .collect();
+        let mut info = info;
+        if sv_columns {
+            // Pushed without the name check, so a clash yields a duplicate column.
+            info.extend(SV_COLUMNS.iter().map(|c| c.to_string()));
+        }
         taken.extend(info.iter().map(|c| c.to_lowercase()));
 
         // Likewise FORMAT names are checked against the header including the INFO
@@ -163,8 +183,26 @@ mod tests {
             &s(&["DP", "AF", "filter", "TLOD"]),
             &s(&["AD", "depth"]),
             &[],
+            false,
         );
         // AF/FILTER are vcf2maf.pl columns already; t_depth/n_depth too.
         assert_eq!(spec.columns(), s(&["DP", "TLOD", "t_AD", "n_AD"]));
+    }
+
+    #[test]
+    fn sv_columns_follow_retained_info() {
+        let spec = RetainSpec::new(&s(&["PE"]), &s(&["GT"]), &[], true);
+        assert_eq!(
+            spec.columns(),
+            s(&[
+                "PE",
+                "Fusion",
+                "Method",
+                "Frame",
+                "CONSENSUS",
+                "t_GT",
+                "n_GT"
+            ])
+        );
     }
 }

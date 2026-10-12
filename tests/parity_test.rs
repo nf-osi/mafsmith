@@ -25,18 +25,9 @@ use std::{
     process::Command,
 };
 
-/// Columns allowed to differ, with the reason. Keep this list short and honest:
-/// an entry here is a known gap, not a matter of taste.
-const KNOWN_DIFFERENCES: &[(&str, &str)] = &[(
-    "all_effects",
-    "mafsmith writes SYMBOL,Consequence,Variant_Classification,HGVSp per transcript in \
-     CSQ order; vcf2maf.pl writes SYMBOL,Consequence,HGVSp_Short,Transcript_ID,RefSeq; \
-     in its own effect-priority order",
-)];
-
-/// Columns vcf2maf.pl adds to any VCF that contains BND/TRA/DEL/DUP/INV records.
-/// mafsmith does not emit them (yet), so they are left out of the header check.
-const VCF2MAF_PL_SV_COLUMNS: &[&str] = &["Fusion", "Method", "Frame", "CONSENSUS"];
+/// Columns allowed to differ, as (column, reason). Keep this list empty if at all
+/// possible: an entry here is a known gap in `--strict`, not a matter of taste.
+const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
 fn parity_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/parity")
@@ -166,14 +157,9 @@ fn compare(fx: &Fixture, expected: &Maf, got: &Maf) -> Vec<String> {
             Some(i) => last = Some(i),
         }
     }
-    // The retained columns after vcf_pos must be exactly vcf2maf.pl's.
-    let after_vcf_pos = |m: &Maf| -> Vec<String> {
-        m.header[m.col("vcf_pos") + 1..]
-            .iter()
-            .filter(|c| !VCF2MAF_PL_SV_COLUMNS.contains(&c.as_str()))
-            .cloned()
-            .collect()
-    };
+    // The columns after vcf_pos (retained INFO, SV summary, retained FORMAT) must
+    // be exactly vcf2maf.pl's.
+    let after_vcf_pos = |m: &Maf| -> Vec<String> { m.header[m.col("vcf_pos") + 1..].to_vec() };
     if after_vcf_pos(expected) != after_vcf_pos(got) {
         problems.push(format!(
             "{tag}: retained columns differ\n  vcf2maf.pl: {:?}\n  mafsmith:   {:?}",
@@ -251,7 +237,8 @@ fn vcf2maf_matches_vcf2maf_pl() {
 }
 
 /// The suite must actually exercise what it claims to: retained columns from
-/// INFO and FORMAT, and a column dropped for clashing with vcf2maf.pl's header.
+/// INFO and FORMAT, a column dropped for clashing with vcf2maf.pl's header,
+/// populated all_effects, and the SV summary columns with a Fusion pair.
 #[test]
 fn parity_fixtures_cover_retain_options() {
     let fixtures = manifest();
@@ -262,4 +249,15 @@ fn parity_fixtures_cover_retain_options() {
     // AF was requested via --retain-info but is already a vcf2maf.pl column.
     assert_eq!(mutect.header.iter().filter(|h| *h == "AF").count(), 1);
     assert!(mutect.header.iter().any(|h| h == "t_AD"));
+
+    let annotated = Maf::read(&parity_dir().join("expected/annotated.vcf2maf.maf"));
+    let effects = annotated.col("all_effects");
+    assert!(annotated
+        .rows
+        .iter()
+        .any(|r| r[effects].matches(';').count() > 1));
+
+    let sv = Maf::read(&parity_dir().join("expected/delly_sv.vcf2maf.maf"));
+    let fusion = sv.col("Fusion");
+    assert!(sv.rows.iter().all(|r| r[fusion].ends_with(" fusion")));
 }

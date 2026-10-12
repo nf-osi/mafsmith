@@ -4,7 +4,7 @@ use crate::{
         csq::{shorten_hgvsp, splice_hgvsp_short, CsqEntry, CsqFormat, CsqLightEntry},
         depth::extract_depth,
         transcript::select_transcript_light,
-        vcf2maf_pl::PerlSamples,
+        vcf2maf_pl::{self, PerlSamples},
     },
     cli::{Annotator, Vcf2mafArgs},
     fasta::IndexedFasta,
@@ -18,10 +18,10 @@ use anyhow::{bail, Context, Result};
 use flate2::read::MultiGzDecoder;
 use rayon::prelude::*;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Write as FmtWrite,
     fs,
-    io::{BufRead, BufReader, BufWriter},
+    io::{BufRead, BufReader, BufWriter, Write as IoWrite},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -134,7 +134,16 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     info!("Converting annotated VCF to MAF...");
     let out_file = fs::File::create(&args.output_maf)
         .with_context(|| format!("Cannot create output MAF: {}", args.output_maf.display()))?;
-    let retain = RetainSpec::new(&args.retain_info, &args.retain_fmt, &args.retain_ann);
+    // vcf2maf.pl adds its SV summary columns (Fusion Method Frame CONSENSUS)
+    // whenever it splits an SV. The header is written before any record is read,
+    // so --strict needs one cheap pre-scan to know.
+    let split_svs = args.strict && vcf_has_split_svs(&annotated_path)?;
+    let retain = RetainSpec::new(
+        &args.retain_info,
+        &args.retain_fmt,
+        &args.retain_ann,
+        split_svs,
+    );
     let mut writer = MafWriter::new(
         BufWriter::new(out_file),
         args.retain_ann.clone(),
@@ -213,44 +222,6 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             .csq_value()
             .map(|v| csq_format.parse_all_light(v))
             .unwrap_or_default();
-
-        // Unannotated variants:
-        // - If the VCF has no CSQ header at all (csq_format is empty), we're in --skip-annotation
-        //   mode on an unannotated VCF. Emit every variant as Targeted_Region, matching
-        //   vcf2maf.pl --inhibit-vep behavior.
-        // - If the VCF was annotated (CSQ header present) but this record has no CSQ entry,
-        //   only emit rows for recognized SV types; drop everything else (matching vcf2maf.pl
-        //   behavior when VEP was run but left a variant unannotated).
-        let default_entry: Option<CsqEntry> = if light_entries.is_empty() {
-            if csq_format.fields.is_empty() {
-                Some(CsqEntry::default())
-            } else {
-                match rec.info_field("SVTYPE") {
-                    Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV") => {
-                        Some(CsqEntry::default())
-                    }
-                    _ => None,
-                }
-            }
-        } else {
-            None
-        };
-
-        // Select the best transcript from lightweight entries (cheap sort/scan, no allocation).
-        let transcript: CsqEntry = if !light_entries.is_empty() {
-            match select_transcript_light(&light_entries, custom_enst.as_ref()) {
-                Some(idx) => csq_format.parse_entry(light_entries[idx].1, &args.retain_ann),
-                None => match default_entry {
-                    Some(e) => e,
-                    None => return Ok(vec![]),
-                },
-            }
-        } else {
-            match default_entry {
-                Some(e) => e,
-                None => return Ok(vec![]),
-            }
-        };
 
         // Pre-split sample fields once per record to avoid redundant string splits.
         let tumor_vals: Option<Vec<&str>> = tumor_idx
@@ -372,6 +343,57 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
                 Some((alt_allele, best_idx))
             })
             .unwrap_or_else(|| (rec.alt_allele.clone(), 1));
+
+        // Unannotated variants:
+        // - If the VCF has no CSQ header at all (csq_format is empty), we're in --skip-annotation
+        //   mode on an unannotated VCF. Emit every variant as Targeted_Region, matching
+        //   vcf2maf.pl --inhibit-vep behavior.
+        // - If the VCF was annotated (CSQ header present) but this record has no CSQ entry,
+        //   only emit rows for recognized SV types; drop everything else (matching vcf2maf.pl
+        //   behavior when VEP was run but left a variant unannotated).
+        //
+        // CSQ entries that VEP (--allele_number) tagged with another ALT's ALLELE_NUM are
+        // ignored, as vcf2maf.pl does. A record whose every entry belongs to another
+        // ALT is still emitted, unannotated.
+        let had_csq = !light_entries.is_empty();
+        let light_entries: Vec<(CsqLightEntry<'_>, &str)> = light_entries
+            .into_iter()
+            .filter(|(l, _)| {
+                l.allele_num.is_empty()
+                    || l.allele_num == "0"
+                    || l.allele_num.parse::<usize>().ok() == Some(effective_alt_vcf_idx)
+            })
+            .collect();
+        let default_entry: Option<CsqEntry> = if light_entries.is_empty() {
+            if csq_format.fields.is_empty() || had_csq {
+                Some(CsqEntry::default())
+            } else {
+                match rec.info_field("SVTYPE") {
+                    Some("BND") | Some("TRA") | Some("DEL") | Some("DUP") | Some("INV") => {
+                        Some(CsqEntry::default())
+                    }
+                    _ => None,
+                }
+            }
+        } else {
+            None
+        };
+
+        // Select the best transcript from lightweight entries (cheap sort/scan, no allocation).
+        let transcript: CsqEntry = if !light_entries.is_empty() {
+            match select_transcript_light(&light_entries, custom_enst.as_ref()) {
+                Some(idx) => csq_format.parse_entry(light_entries[idx].1, &args.retain_ann),
+                None => match default_entry {
+                    Some(e) => e,
+                    None => return Ok(vec![]),
+                },
+            }
+        } else {
+            match default_entry {
+                Some(e) => e,
+                None => return Ok(vec![]),
+            }
+        };
 
         // Normalize SV ALT alleles to <SVTYPE> form.
         // vcf2maf.pl does `$cols[4] = "<" . $info{SVTYPE} . ">"` for BND/TRA/DEL/DUP/INV,
@@ -498,8 +520,12 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         // all_effects: semicolon-separated list for every annotated transcript.
         // Use light entries — avoids a full CsqEntry parse for each transcript.
         // hgvsp prefix is stripped inline (rfind(':')) without allocating.
+        // --strict writes vcf2maf.pl's format instead (below, once its ALT is known).
         let mut all_effects = String::new();
-        for (light, _) in light_entries.iter().filter(|(l, _)| !l.feature.is_empty()) {
+        for (light, _) in light_entries
+            .iter()
+            .filter(|(l, _)| !args.strict && !l.feature.is_empty())
+        {
             if !all_effects.is_empty() {
                 all_effects.push(';');
             }
@@ -864,6 +890,9 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             no_counts(&normal_depth, &normal_vals) && !(normal_ad_truncated || normal_alt_oor);
         let perl_samples = (retain.has_fmt() || tumor_from_perl || normal_from_perl)
             .then(|| PerlSamples::new(rec, tumor_vals.as_deref(), normal_vals.as_deref()));
+        if let Some(csq) = rec.csq_value().filter(|_| args.strict) {
+            all_effects = vcf2maf_pl::all_effects(csq, &csq_format.index, effective_alt_vcf_idx);
+        }
         let perl_depths = |sample: Option<&crate::annotation::vcf2maf_pl::PerlSample>| {
             let p = perl_samples.as_ref().unwrap();
             sample.map_or_else(Default::default, |s| {
@@ -958,6 +987,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             // SV secondary rows clone this, so both breakpoints carry the same
             // values — vcf2maf.pl writes the split VCF lines with identical INFO/FORMAT.
             retained: retain.values(rec, perl_samples.as_ref()),
+            sv_fusion: split_svs && vcf2maf_pl::is_fusion_var(&effective_alt),
             ..Default::default()
         };
 
@@ -1003,13 +1033,25 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
     const BATCH: usize = 50_000;
     let mut batch: Vec<crate::vcf::VcfRecord> = Vec::with_capacity(BATCH);
 
+    // vcf2maf.pl's Fusion backfill: "<vcf_id>-<tumor barcode>" → the Hugo_Symbols
+    // of that SV's breakpoint rows, in output order.
+    let mut sv_pair: HashMap<String, String> = HashMap::new();
+
     let drain = |batch: &[crate::vcf::VcfRecord],
-                 writer: &mut MafWriter<BufWriter<fs::File>>|
+                 writer: &mut MafWriter<BufWriter<fs::File>>,
+                 sv_pair: &mut HashMap<String, String>|
      -> Result<()> {
         let results: Vec<Result<Vec<MafRecord>>> =
             batch.par_iter().map(|rec| convert_record(rec)).collect();
         for result in results {
             for maf_rec in result? {
+                if maf_rec.sv_fusion {
+                    let key = format!("{}-{}", maf_rec.vcf_id, maf_rec.tumor_sample_barcode);
+                    sv_pair
+                        .entry(key)
+                        .and_modify(|v| write!(v, "-{} fusion", maf_rec.hugo_symbol).unwrap())
+                        .or_insert_with(|| maf_rec.hugo_symbol.clone());
+                }
                 writer.write_record(&maf_rec)?;
             }
         }
@@ -1024,7 +1066,7 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
             Some(rec) => {
                 batch.push(rec);
                 if batch.len() >= BATCH {
-                    drain(&batch, &mut writer)?;
+                    drain(&batch, &mut writer, &mut sv_pair)?;
                     batch.clear();
                 }
             }
@@ -1032,11 +1074,89 @@ pub async fn run(args: Vcf2mafArgs) -> Result<()> {
         }
     }
     if !batch.is_empty() {
-        drain(&batch, &mut writer)?;
+        drain(&batch, &mut writer, &mut sv_pair)?;
     }
 
     writer.flush()?;
+    drop(writer);
+    if !sv_pair.is_empty() {
+        backfill_fusion(&args.output_maf, &sv_pair)?;
+    }
     info!("MAF written to {}", args.output_maf.display());
+    Ok(())
+}
+
+/// Whether any record is an SV that vcf2maf.pl's preprocessing would split into
+/// two breakpoint lines (see `vcf2maf_pl::is_split_sv`).
+fn vcf_has_split_svs(path: &Path) -> Result<bool> {
+    let file =
+        fs::File::open(path).with_context(|| format!("Cannot open VCF: {}", path.display()))?;
+    let reader: Box<dyn BufRead> = if path.extension().is_some_and(|e| e == "gz") {
+        Box::new(BufReader::new(MultiGzDecoder::new(file)))
+    } else {
+        Box::new(BufReader::new(file))
+    };
+    for line in reader.lines() {
+        let line = line?;
+        if line.starts_with('#') || !line.contains("SVTYPE") {
+            continue;
+        }
+        let cols: Vec<&str> = line.splitn(9, '\t').collect();
+        if cols.len() < 8 {
+            continue;
+        }
+        let alts: Vec<String> = cols[4].split(',').map(String::from).collect();
+        if vcf2maf_pl::is_split_sv(cols[7], cols[3], &alts) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// vcf2maf.pl's last pass over the finished MAF: every row whose
+/// `<vcf_id>-<Tumor_Sample_Barcode>` names a paired SV gets the gene pair in its
+/// Fusion column. Like vcf2maf.pl this matches on vcf_id alone, so rows that
+/// share an ID (e.g. ".") share the value, SV or not.
+fn backfill_fusion(maf: &Path, sv_pair: &HashMap<String, String>) -> Result<()> {
+    let dir = maf
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut tmp = NamedTempFile::new_in(dir)
+        .with_context(|| format!("Cannot create a temporary file in {}", dir.display()))?;
+    {
+        let reader = BufReader::new(fs::File::open(maf)?);
+        let mut out = BufWriter::new(tmp.as_file_mut());
+        let mut idx: Option<(usize, usize, usize)> = None;
+        for line in reader.lines() {
+            let line = line?;
+            if line.starts_with('#') {
+                writeln!(out, "{line}")?;
+            } else if line.starts_with("Hugo_Symbol") {
+                let pos = |name: &str| line.split('\t').position(|c| c == name);
+                idx = pos("Tumor_Sample_Barcode")
+                    .zip(pos("Fusion"))
+                    .zip(pos("vcf_id"))
+                    .map(|((t, f), v)| (t, f, v));
+                writeln!(out, "{line}")?;
+            } else {
+                let mut cols: Vec<&str> = line.split('\t').collect();
+                if let Some((t, f, v)) = idx {
+                    let key = format!("{}-{}", cols[v], cols[t]);
+                    if let Some(gene) = sv_pair.get(&key).filter(|g| !g.is_empty() && *g != "0") {
+                        cols[f] = gene;
+                    }
+                }
+                writeln!(out, "{}", cols.join("\t"))?;
+            }
+        }
+        out.flush()?;
+    }
+    // NamedTempFile is created 0600; keep the permissions the MAF was written with.
+    tmp.as_file()
+        .set_permissions(fs::metadata(maf)?.permissions())?;
+    tmp.persist(maf)
+        .with_context(|| format!("Cannot replace {}", maf.display()))?;
     Ok(())
 }
 
