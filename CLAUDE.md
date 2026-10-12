@@ -57,8 +57,69 @@ target/release/mafsmith vcf2maf \
 | VarScan somatic: all depth fields outputting `'.'`, all TSA1 defaulting to REF | Two bugs: (1) `ad_oor` check fired on VarScan's single-value AD (ad_len=1 <= alt_vcf_idx=1), masking VarScan depth extraction. (2) Depth-based hom_alt TSA1 fallback used `ad_vals.get(alt_vcf_idx)` which fails for VarScan's AD[0] = alt_count. | (1) `vcf2maf.rs` `ad_oor`: add `ad_len >= 2` guard. (2) Replace AD-index hom_alt logic with `extract_depth()` call that handles all callers | syn6840402 (933→0 diffs) |
 | Normal sample wrong alt depth for multi-allelic records | `extract_depth` for normal sample always used `alt_vcf_idx=1` (first ALT) regardless of which alt was selected. For GT=1/2 records the normal sample's AD index for the effective alt was never used. | `vcf2maf.rs` line 368: pass `effective_alt` and `effective_alt_vcf_idx` to normal `extract_depth` (same as tumor) | syn5553155 (n_alt_count diffs fixed) |
 | SomaticSniper: t_alt_count/n_alt_count off by 1–many | `DP4` alt_fwd+alt_rev counts ALL non-ref reads at a site, not just the specific ALT allele. For T>C records with background G reads, DP4 over-counts. vcf2maf.pl uses `BCOUNT` (per-base A,C,G,T counts) for per-allele ref/alt counts. Both fields are always present in SomaticSniper VCFs. | `depth.rs` case 5: when BCOUNT is present alongside DP4, use BCOUNT[ref_base]/BCOUNT[alt_base] for ref/alt counts; use DP4 sum for total depth only | WGS_FD_1.bwa.somaticSniper.vcf.gz (270→0 diffs) |
+| `t_depth`/`n_depth` disagreed wherever DP and the allele depths counted different reads (issue #3) | Each depth convention reconciled DP its own way: AD used `max(DP, sum(AD))`, DP4/RO+AO/AU-TU used DP verbatim, VarScan used `DP or RD+AD`. vcf2maf.pl instead runs one rule for every convention — replace DP by the sum of all allele depths *only* when a REF/ALT depth (or their sum) exceeds DP, or when DP is absent. `max()` over-reports on multi-allelic sites where an unselected deep ALT inflates `sum(AD)`; using DP verbatim under-reports for the other conventions. | `depth.rs`: single `fix_total_depth()` helper applied by every branch, including the Perl zero-truthiness guard so a REF depth of 0 does not trip the check | GIAB HG001–HG007 (1,486 diffs); synthetic per-convention VCFs vs vcf2maf.pl (0 diffs on all 6) |
+| MAF omitted the VCF pass-through columns `FILTER`, `flanking_bps`, `vcf_id`, `vcf_qual`, `vcf_pos` (issue #2) | These columns come from the VCF record rather than from VEP, and were never added to the writer. `flanking_bps` additionally needs random access to the reference FASTA. | `record.rs`/`writer.rs`: new columns after `PolyPhen`, with `vcf_pos` last (vcf2maf.pl order); `fasta.rs`: `IndexedFasta` — an mmap-backed, `.fai`-indexed range reader opened once per run | Strelka germline chr1 (28,456 variants, 0 diffs incl. all 5 columns) |
+| Depth columns wrong for samples with no allele counts (found by the parity suite) | `extract_depth` does not model Delly `RR`/`RV`, `DV`, `FA`, CaVEMan or cgpPindel, and for samples with no depth source a heuristic printed `0`/`.`. vcf2maf.pl prints `0`/`.` only when an all-`.` AD array exists, and blanks otherwise (GT-only, Manta `PR:SR`, `AD=.`). | `vcf2maf.rs`: whenever `extract_depth` returns neither count (and no strict truncation applies), take all three depth columns from `vcf2maf_pl::PerlSamples`, a port of vcf2maf.pl's sample handling and `FixAlleleDepths` | parity suite (Delly, Manta, Mutect2 `AD=.`) |
+| `dbSNP_RS` empty instead of `novel` | vcf2maf.pl writes `novel` when the selected CSQ entry has no Existing_variation. mafsmith wrote an empty string. | `vcf2maf.rs`: `novel` when a CSQ entry exists but Existing_variation is empty; still empty when the record has no CSQ | parity suite (annotated fixture) |
+| Transcript chosen for the wrong ALT on multi-allelic sites annotated with `--allele_number` (found by the parity suite) | vcf2maf.pl drops CSQ entries whose `ALLELE_NUM` names an ALT other than the one it selected. mafsmith ignored `ALLELE_NUM`, so it could report the other ALT's consequence (e.g. `stop_gained` for T when the tumor carries G). mafsmith's own fastVEP/VEP runs do not write `ALLELE_NUM`, so this affected only pre-annotated input. | `vcf2maf.rs`: transcript selection now runs after ALT selection and skips CSQ entries for other ALTs; a record whose every entry belongs to another ALT is still emitted, unannotated, as in Perl | parity suite (`strict_edge_cases`) |
+| Last CSQ field unreadable | `CsqFormat::from_header_description` trimmed only `"` from the header line, so the last field was named e.g. `RefSeq">` and its values were never found (including by `--retain-ann`) | `csq.rs`: also trim the closing `>` | parity suite (`strict_edge_cases`) |
+| No `--retain-info` / `--retain-fmt` (issue #6) | Never implemented | `maf/retain.rs` (column list, vcf2maf.pl's case-insensitive de-dup against its *full* header) + `annotation/vcf2maf_pl.rs` (FORMAT values come from vcf2maf.pl's rewritten `%tum_info`/`%nrm_info`, INFO from its SV-rewritten line) | parity suite, all 9 fixtures |
+
+### Retained INFO/FORMAT columns (`--retain-info`, `--retain-fmt`)
+
+Order after `vcf_pos`: INFO columns, then `t_<KEY>`, `n_<KEY>` per FORMAT key — the same as
+vcf2maf.pl. Names that clash case-insensitively with vcf2maf.pl's header are dropped with a
+warning. The check uses vcf2maf.pl's full header, including the ~60 VEP columns mafsmith never
+writes, so `--retain-info AF` is dropped just as it is in Perl. Do not change FORMAT values to raw
+VCF strings: vcf2maf.pl writes its rewritten per-sample hashes, so `t_AD` is the normalized depth list
+and `t_GT` can be a synthesized `0/1`/`1/1`.
+
+### MAF pass-through columns
+
+`FILTER`, `flanking_bps`, `vcf_id`, `vcf_qual` are emitted after `PolyPhen`; `vcf_pos`
+comes after any `--retain-ann` columns, matching where vcf2maf.pl pushes it onto its
+header. All five are populated in every mode, including `--skip-annotation`.
+
+- `flanking_bps` is the reference span `chr:(POS-1)-(POS+len(REF))` — the REF allele
+  plus 1 bp on either side, uppercased. It needs a reference FASTA: mafsmith uses
+  `--ref-fasta`, else `~/.mafsmith/<build>/reference.fa`. With no FASTA available the
+  column is empty and a warning is logged; the rest of the conversion is unaffected.
+- The FASTA must be uncompressed with a `.fai` sidecar — `.fai` offsets address the
+  uncompressed stream, so `IndexedFasta::open` rejects a gzipped FASTA rather than
+  returning garbage bases. `mafsmith fetch` already writes an uncompressed
+  `reference.fa`.
+- `vcf_pos` and `flanking_bps` use the pre-normalization POS/REF, so they still point
+  at the original VCF record after prefix-stripping moved `Start_Position`.
+- SV secondary breakpoint rows carry the partner locus's own `vcf_pos` and
+  `flanking_bps`.
+
+### vcf2maf.pl parity suite (`tests/parity_test.rs`)
+
+This suite runs under a plain `cargo test`; it uses Cargo's built binary, not `target/release`. Each fixture in
+`tests/fixtures/parity/manifest.tsv` is converted with `--skip-annotation --strict` and compared
+cell by cell, over every column both MAFs share, against `expected/<name>.vcf2maf.maf`. Those
+references come from vcf2maf.pl 1.6.22 `--inhibit-vep` (bioconda `vcf2maf-env`). The fixtures sit on
+a 5 × 4 kb synthetic genome (`reference.fa`, committed through a `.gitignore` exception), so
+`flanking_bps` and SV partner bases are compared too.
+
+- Add a scenario: add a `<name>.vcf` (hand-written, on `chr1`/`chr2`, `length=4000` contigs) and a
+  manifest line. Then run `python3 scripts/build_parity_fixtures.py`, which rebuilds `annotated.vcf`
+  and the FASTA so it agrees with every REF, followed by `bash scripts/generate_parity_expected.sh`.
+- `KNOWN_DIFFERENCES` in the test lists the columns allowed to differ. It is empty: every shared
+  column, including `all_effects` and the SV summary columns, must match. An entry there is a known
+  gap and should be documented below.
+- `strict_edge_cases` covers the Perl quirks that `--strict` reproduces: `ALLELE_NUM` filtering on a
+  multi-allelic site, the Fusion pair leaking to every row with the same `vcf_id` (here `.`), `<TRA>`
+  rows left out of the pairing, and an HGVSp carrying an HGVSc prefix.
+- `annotated.vcf` is generated from `integration_annotated.vcf`. SV records get `CHR2` added and the
+  ALT-only BND is dropped, because vcf2maf.pl reads only `CHR2`, which would leave its secondary row
+  with an empty Chromosome.
 
 ### Known remaining differences vs vcf2maf.pl
+
+- **`all_effects` format (default mode only)**: mafsmith writes `SYMBOL,Consequence,Variant_Classification,HGVSp` joined by `;` in CSQ order. vcf2maf.pl writes `SYMBOL,One_Consequence,HGVSp,Transcript_ID,RefSeq;` per effect, sorted by biotype, then severity, then transcript length. `--strict` uses `vcf2maf_pl::all_effects`, a port with vcf2maf.pl's own priority tables, which deliberately differ from `transcript::biotype_rank` (e.g. a pseudogene biotype absent from its table ranks 10, not 8).
+- **SV summary columns (default mode only)**: vcf2maf.pl appends `Fusion Method Frame CONSENSUS` after the `--retain-info` columns whenever it split any SV. `--strict` reproduces this: a pre-scan of the input decides the header, and `backfill_fusion` rewrites the finished MAF. Fusion is keyed on `vcf_id`-`Tumor_Sample_Barcode` exactly as in Perl, so every row with ID `.` gets the gene pair of the ID-`.` SVs, SNVs included. `--strict` reproduces that bug on purpose.
+- **`--min-hom-vaf` is not wired**: the CLI flag defaults to 0.0 and is unused. Every hom-alt inference, including the `t_GT` that `--retain-fmt` writes for untyped tumors, uses vcf2maf.pl's default of 0.7.
 
 - **5'UTR vs 5'Flank** (chr1:3857566, chr1:3857574): Transcript selection picks different canonical isoform. Affects ~2 variants per dataset. Under investigation.
 - **3'UTR vs 3'Flank** (e.g. chr1:9729848, chr1:944194, chr1:53087567): mafsmith picks one gene's canonical transcript (3'UTR), vcf2maf picks an adjacent gene's transcript (3'Flank). Root cause is same: different gene/transcript selection at gene-boundary regions. Affects ~1–3 variants per dataset.
@@ -68,6 +129,7 @@ target/release/mafsmith vcf2maf \
 - **Multi-allelic GVCF tie**: when two ALTs have identical depth, tool-specific tie-breaking may differ. Affects ~4 variants in large GVCF files.
 - **SV secondary rows**: mafsmith correctly emits secondary SV breakpoint rows with actual partner chromosome/position. vcf2maf.pl emits them with empty Chromosome (a vcf2maf.pl bug). The `synapse_validate.py` comparison script handles this with best-match selection for key collisions and skips empty-chromosome vcf2maf rows.
 - **Unrecognized symbolic ALTs**: records with `<INS>`, `<CNV>` or other non-BND/TRA/DEL/DUP/INV symbolic ALTs are dropped (matching vcf2maf.pl behavior).
+- **`common_variant` in FILTER**: vcf2maf.pl strips any `common_variant` tag from the input FILTER and re-adds it when a gnomAD subpopulation AF exceeds `--max-subpop-af`. mafsmith does not annotate gnomAD frequencies, so it passes an input `common_variant` tag through rather than dropping a tag it cannot recompute. Only reachable when the input VCF was itself derived from vcf2maf output.
 
 ### Validated callers (20k variants each, 0 mismatches in --strict mode)
 
@@ -98,6 +160,14 @@ target/release/mafsmith vcf2maf \
 ## Performance
 
 All benchmarks on AWS c6a.4xlarge (AMD EPYC 7R13, 16 vCPU, 30 GiB RAM). Full per-sample data in `results/`.
+
+The numbers below predate `flanking_bps`, which adds one reference-FASTA lookup per
+variant. Measured on 305k Strelka germline variants (M-series laptop, 1 core): 0.33 s
+→ 0.44 s warm, i.e. ~25–30% off the conversion-only throughput, and a one-off ~1.2 s
+the first time the reference pages are faulted in. The annotated pipeline, where
+annotation dominates, is proportionally unaffected. The lookup is an mmap slice
+rather than a read syscall for exactly this reason — a `pread` per variant cost 3×
+more. Re-run `scripts/benchmark_all.py` before quoting conversion-only figures.
 
 ### Conversion-only (`--skip-annotation` / `--inhibit-vep`)
 

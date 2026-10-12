@@ -1,0 +1,24 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=4000>
+##contig=<ID=chr2,length=4000>
+##INFO=<ID=PRECISE,Number=0,Type=Flag,Description="Precise">
+##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description="Imprecise">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="SV type">
+##INFO=<ID=SVMETHOD,Number=1,Type=String,Description="Caller">
+##INFO=<ID=CHR2,Number=1,Type=String,Description="Partner chromosome">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position">
+##INFO=<ID=PE,Number=1,Type=Integer,Description="Paired-end support">
+##INFO=<ID=MAPQ,Number=1,Type=Integer,Description="Median mapping quality">
+##INFO=<ID=CT,Number=1,Type=String,Description="Connection type">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=FT,Number=1,Type=String,Description="Filter">
+##FORMAT=<ID=DR,Number=1,Type=Integer,Description="Ref pairs">
+##FORMAT=<ID=DV,Number=1,Type=Integer,Description="Alt pairs">
+##FORMAT=<ID=RR,Number=1,Type=Integer,Description="Ref junction reads">
+##FORMAT=<ID=RV,Number=1,Type=Integer,Description="Alt junction reads">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	TUMOR	NORMAL
+chr1	2000	DEL00000001	A	<DEL>	.	PASS	PRECISE;SVTYPE=DEL;SVMETHOD=EMBL.DELLYv0.7.8;CHR2=chr1;END=2400;PE=12;MAPQ=60;CT=3to5	GT:GQ:FT:DR:DV:RR:RV	0/1:99:PASS:20:10:25:12	0/0:99:PASS:30:0:35:0
+chr1	2600	DUP00000001	C	<DUP>	.	PASS	IMPRECISE;SVTYPE=DUP;SVMETHOD=EMBL.DELLYv0.7.8;CHR2=chr1;END=2900;PE=8;MAPQ=55;CT=5to3	GT:GQ:FT:DR:DV:RR:RV	0/1:80:PASS:18:8:0:0	0/0:90:PASS:25:0:0:0
+chr1	3100	INV00000001	G	<INV>	.	LowQual	IMPRECISE;SVTYPE=INV;SVMETHOD=EMBL.DELLYv0.7.8;CHR2=chr1;END=3500;PE=4;MAPQ=30;CT=3to3	GT:GQ:FT:DR:DV:RR:RV	0/1:20:LowQual:15:4:0:0	0/0:40:PASS:20:0:0:0
+chr1	3700	BND00000001	T	T]chr2:1500]	.	PASS	PRECISE;SVTYPE=BND;SVMETHOD=EMBL.DELLYv0.7.8;CHR2=chr2;END=1500;PE=15;MAPQ=60;CT=3to5	GT:GQ:FT:DR:DV:RR:RV	0/1:99:PASS:22:15:30:14	0/0:99:PASS:28:0:33:1

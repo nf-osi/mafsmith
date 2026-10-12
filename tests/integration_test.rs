@@ -87,6 +87,12 @@ const KEY_COLUMNS: &[&str] = &[
     "n_depth",
     "n_ref_count",
     "n_alt_count",
+    // Pass-throughs from the source VCF. flanking_bps is excluded: it needs a
+    // reference FASTA, which these tests deliberately run without.
+    "FILTER",
+    "vcf_id",
+    "vcf_qual",
+    "vcf_pos",
 ];
 
 // ── Fast fixture-only tests (no binary required) ─────────────────────────────

@@ -40,6 +40,8 @@ pub async fn run(args: Maf2mafArgs) -> Result<()> {
         maf_center: String::new(),
         min_hom_vaf: 0.0,
         retain_ann: vec![],
+        retain_info: vec![],
+        retain_fmt: vec![],
         skip_annotation: false,
         strict: false,
     })

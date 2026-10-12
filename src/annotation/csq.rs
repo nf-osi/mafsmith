@@ -43,11 +43,13 @@ pub struct CsqLightEntry<'a> {
     pub consequences: Vec<&'a str>,
     /// Raw HGVSp value (may have a transcript prefix "ENST…:p.X"); strip with rfind(':').
     pub hgvsp_raw: &'a str,
+    /// VEP `--allele_number` ALLELE_NUM (1-based ALT index); empty when not annotated.
+    pub allele_num: &'a str,
 }
 
 /// Field names extracted for lightweight transcript selection, in slot order.
 /// Slots map 1-to-1 with the fields stored in `CsqLightEntry`.
-const LIGHT_FIELD_NAMES: [&str; 8] = [
+const LIGHT_FIELD_NAMES: [&str; 9] = [
     "Feature_type",  // slot 0
     "SYMBOL",        // slot 1
     "Feature",       // slot 2
@@ -56,6 +58,7 @@ const LIGHT_FIELD_NAMES: [&str; 8] = [
     "cDNA_position", // slot 5
     "Consequence",   // slot 6
     "HGVSp",         // slot 7
+    "ALLELE_NUM",    // slot 8
 ];
 
 /// Extracted from the VCF header CSQ FORMAT string.
@@ -63,10 +66,10 @@ const LIGHT_FIELD_NAMES: [&str; 8] = [
 pub struct CsqFormat {
     pub fields: Vec<String>,
     pub index: HashMap<String, usize>,
-    /// (csq_field_index, slot_index) pairs for the 8 light fields, sorted by csq_field_index.
+    /// (csq_field_index, slot_index) pairs for the 9 light fields, sorted by csq_field_index.
     /// Used by parse_light for a single forward scan — no Vec<&str> parts allocation needed.
     light_scan: Vec<(usize, u8)>,
-    /// Largest csq_field_index among the 8 light fields (scan can stop after this).
+    /// Largest csq_field_index among the 9 light fields (scan can stop after this).
     light_max: usize,
 }
 
@@ -103,7 +106,11 @@ impl CsqFormat {
         let pos = description
             .find(marker)
             .context("CSQ header Description missing 'Format: '")?;
-        let format_str = description[pos + marker.len()..].trim_end_matches('"');
+        // The description may be the whole header line, ending in `">`.
+        let format_str = description[pos + marker.len()..]
+            .trim_end()
+            .trim_end_matches('>')
+            .trim_end_matches('"');
         let fields: Vec<String> = format_str.split('|').map(|s| s.to_owned()).collect();
         let index: HashMap<String, usize> = fields
             .iter()
@@ -129,10 +136,10 @@ impl CsqFormat {
 
     /// Parse only the fields needed for transcript selection — no Vec<&str> parts allocation.
     /// Uses a single forward scan through the pipe-delimited entry guided by pre-sorted
-    /// field indices, stopping as soon as all 8 target fields have been collected.
+    /// field indices, stopping as soon as all 9 target fields have been collected.
     /// All returned values borrow from `raw`.
     pub fn parse_light<'a>(&self, raw: &'a str) -> CsqLightEntry<'a> {
-        let mut slots: [&'a str; 8] = [""; 8];
+        let mut slots: [&'a str; 9] = [""; 9];
         let mut scan_pos = 0usize; // index into self.light_scan
         let total_targets = self.light_scan.len();
 
@@ -162,6 +169,7 @@ impl CsqFormat {
             transcript_length,
             consequences: slots[6].split('&').collect(), // Vec<&'a str>, typically 1-3 items
             hgvsp_raw: slots[7],
+            allele_num: slots[8],
         }
     }
 

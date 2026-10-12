@@ -65,6 +65,12 @@ CONVERSION_FIELDS = {
     "n_alt_count",
     "Matched_Norm_Sample_Barcode",
     "Tumor_Sample_Barcode",
+    # Pass-through columns copied from the source VCF record
+    "FILTER",
+    "flanking_bps",
+    "vcf_id",
+    "vcf_qual",
+    "vcf_pos",
 }
 
 SV_ALTS = {"<BND>", "<DEL>", "<DUP>", "<INV>", "<TRA>"}
@@ -663,8 +669,18 @@ def main():
         vc_work.mkdir()
         plain_vcf = vc_work / "input.vcf"
 
-        # GRCh38/GRCm39 reference FASTAs use chr-prefix; add it if the VCF lacks it.
-        add_chr = (not has_chr) and args.genome in ("grch38", "grcm39")
+        # Add a chr prefix only when the reference FASTA actually uses one — an
+        # Ensembl-style FASTA ("1", "2", ...) would otherwise stop matching the VCF.
+        if args.ref_fasta:
+            fai = Path(str(args.ref_fasta) + ".fai")
+            if fai.exists():
+                fasta_has_chr = fai.read_text().split("\t", 1)[0].startswith("chr")
+            else:
+                with open(args.ref_fasta) as fh:
+                    fasta_has_chr = fh.readline().startswith(">chr")
+        else:
+            fasta_has_chr = args.genome in ("grch38", "grcm39")
+        add_chr = (not has_chr) and fasta_has_chr
         if add_chr:
             print("  Note: adding chr prefix (VCF uses Ensembl-style names)", flush=True)
 
@@ -712,7 +728,9 @@ def main():
                 "--vep-data",  str(args.vep_cache),
                 "--vep-forks", str(args.vep_forks),
             ]
-        if args.ref_fasta and not args.inhibit_vep:
+        # Pass the FASTA in both modes: mafsmith reads flanking_bps from it even
+        # with --skip-annotation, exactly as vcf2maf.pl does with --inhibit-vep.
+        if args.ref_fasta:
             ms_cmd += ["--ref-fasta", str(args.ref_fasta)]
         if normal_id:
             ms_cmd += ["--vcf-normal-id", vcf_normal_id, "--normal-id", normal_id]

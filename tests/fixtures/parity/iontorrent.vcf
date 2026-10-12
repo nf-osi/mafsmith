@@ -1,0 +1,17 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr2,length=4000>
+##INFO=<ID=AO,Number=A,Type=Integer,Description="Alt observations">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##INFO=<ID=HS,Number=0,Type=Flag,Description="Hotspot">
+##INFO=<ID=TYPE,Number=A,Type=String,Description="Allele type">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##FORMAT=<ID=FDP,Number=1,Type=Integer,Description="Flow depth">
+##FORMAT=<ID=RO,Number=1,Type=Integer,Description="Ref observations">
+##FORMAT=<ID=AO,Number=A,Type=Integer,Description="Alt observations">
+##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele frequency">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE1
+chr2	300	.	C	T	120.5	PASS	AO=20;DP=50;HS;TYPE=snp	GT:GQ:DP:FDP:RO:AO:AF	0/1:99:50:50:30:20:0.4
+chr2	400	.	G	A,T	80	PASS	AO=3,12;DP=40;TYPE=snp,snp	GT:GQ:DP:FDP:RO:AO:AF	0/2:60:40:40:25:3,12:0.075,0.3
+chr2	500	.	AT	A	30	NOCALL	AO=4;DP=20;TYPE=del	GT:GQ:DP:FDP:RO:AO:AF	./.:5:20:20:16:4:0.2

@@ -60,8 +60,25 @@ pub struct MafRecord {
     pub vep_canonical: String,
     pub vep_sift: String,
     pub vep_polyphen: String,
+    // Pass-through fields copied straight from the source VCF record
+    /// VCF FILTER column ("." when unfiltered).
+    pub filter: String,
+    /// Reference bases spanning the VCF REF allele plus 1 bp on either side.
+    pub flanking_bps: String,
+    /// VCF ID column ("." when absent).
+    pub vcf_id: String,
+    /// VCF QUAL column ("." when absent).
+    pub vcf_qual: String,
+    /// VCF POS, before allele normalization moved Start_Position.
+    pub vcf_pos: String,
     /// Extra retained VEP annotation fields (--retain-ann)
     pub extra: IndexMap<String, String>,
+    /// Retained INFO then FORMAT values (--retain-info, --retain-fmt), written
+    /// after `vcf_pos` in the order of `RetainSpec::columns`.
+    pub retained: Vec<String>,
+    /// Not written: marks an SV breakpoint row whose Hugo_Symbol goes into the
+    /// Fusion column backfill (`--strict` with SVs only).
+    pub sv_fusion: bool,
 }
 
 pub const STANDARD_COLUMNS: &[&str] = &[
@@ -118,4 +135,12 @@ pub const STANDARD_COLUMNS: &[&str] = &[
     "CANONICAL",
     "SIFT",
     "PolyPhen",
+    "FILTER",
+    "flanking_bps",
+    "vcf_id",
+    "vcf_qual",
 ];
+
+/// Column appended after any `--retain-ann` columns, matching vcf2maf.pl, which
+/// pushes `vcf_pos` onto the header last.
+pub const TRAILING_COLUMN: &str = "vcf_pos";

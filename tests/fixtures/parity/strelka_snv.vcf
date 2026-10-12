@@ -1,0 +1,21 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=4000>
+##contig=<ID=chr2,length=4000>
+##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description="Somatic">
+##INFO=<ID=QSS,Number=1,Type=Integer,Description="Quality score">
+##INFO=<ID=NT,Number=1,Type=String,Description="Normal genotype">
+##INFO=<ID=SGT,Number=1,Type=String,Description="Most likely genotype">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##FORMAT=<ID=FDP,Number=1,Type=Integer,Description="Filtered depth">
+##FORMAT=<ID=SDP,Number=1,Type=Integer,Description="Spanning deletions">
+##FORMAT=<ID=SUBDP,Number=1,Type=Integer,Description="Below-threshold depth">
+##FORMAT=<ID=AU,Number=2,Type=Integer,Description="A tier1,tier2">
+##FORMAT=<ID=CU,Number=2,Type=Integer,Description="C tier1,tier2">
+##FORMAT=<ID=GU,Number=2,Type=Integer,Description="G tier1,tier2">
+##FORMAT=<ID=TU,Number=2,Type=Integer,Description="T tier1,tier2">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr1	150	.	C	T	.	PASS	SOMATIC;QSS=60;NT=ref;SGT=CC->CT;DP=80	DP:FDP:SDP:SUBDP:AU:CU:GU:TU	38:0:0:0:0,0:38,39:0,0:0,0	42:1:0:0:0,0:28,29:0,0:13,13
+chr1	250	.	G	A	.	PASS	SOMATIC;QSS=90;NT=ref;SGT=GG->AA;DP=70	DP:FDP:SDP:SUBDP:AU:CU:GU:TU	30:0:0:0:0,0:0,0:30,30:0,0	40:0:0:0:33,34:0,0:7,7:0,0
+chr1	350	.	A	G	.	LowEVS	SOMATIC;QSS=12;NT=ref;SGT=AA->AG;DP=50	DP:FDP:SDP:SUBDP:AU:CU:GU:TU	25:0:0:0:25,26:0,0:0,0:0,0	20:2:0:0:16,17:0,0:4,4:1,1
+chr2	100	.	T	C	.	PASS	SOMATIC;QSS=40;NT=ref;SGT=TT->CT;DP=61	DP:FDP:SDP:SUBDP:AU:CU:GU:TU	30:0:0:0:0,0:0,0:0,0:32,33	25:0:0:0:0,0:12,12:0,0:15,15

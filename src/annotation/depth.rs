@@ -19,6 +19,42 @@ impl AlleleDepth {
     }
 }
 
+/// Reconcile the total depth with the per-allele depths, mirroring the sanity
+/// check at the end of vcf2maf.pl's `FixAlleleDepths`:
+///
+/// - DP present, but a REF/ALT depth exceeds it (or the two together do): DP is
+///   counting a different read set than the allele depths (filtered or
+///   supplementary reads), so DP is replaced by the sum of all allele depths.
+/// - DP absent: DP becomes the sum of all allele depths.
+/// - Otherwise DP is reported as given.
+///
+/// `depths_sum` is the sum over *every* allele depth (REF plus all ALTs), which
+/// is what vcf2maf.pl sums — not just the selected REF/ALT pair. `slots_defined`
+/// says whether the caller filled both the REF and selected-ALT slots at all;
+/// vcf2maf.pl only derives a missing DP when both slots exist.
+///
+/// The zero-guards reproduce Perl truthiness: a depth of 0 does not take part in
+/// the comparisons, so e.g. AD="0,82" with DP=652 leaves DP alone.
+fn fix_total_depth(
+    ref_count: Option<u32>,
+    alt_count: Option<u32>,
+    dp: Option<u32>,
+    depths_sum: u32,
+    slots_defined: bool,
+) -> Option<u32> {
+    let r = ref_count.filter(|&v| v != 0);
+    let a = alt_count.filter(|&v| v != 0);
+    match dp {
+        Some(d) => {
+            let inconsistent = r.is_some_and(|v| v > d)
+                || a.is_some_and(|v| v > d)
+                || matches!((r, a), (Some(x), Some(y)) if x + y > d);
+            Some(if inconsistent { depths_sum } else { d })
+        }
+        None => slots_defined.then_some(depths_sum),
+    }
+}
+
 /// Extract allele depths from a VCF sample column given FORMAT keys.
 ///
 /// Handles the following caller conventions:
@@ -66,21 +102,14 @@ pub fn extract_depth<F: AsRef<str>>(
             let alt_count: Option<u32> = raw.get(alt_vcf_idx).and_then(|v| v.parse().ok());
             // Accept even if one side is unknown ("."), as long as we parsed something
             if ref_count.is_some() || alt_count.is_some() {
-                // vcf2maf.pl uses max(DP, sum(AD)) for total depth: when reads that
-                // pass allele-depth filters outnumber DP (e.g. GIAB ADALL-rich sites),
-                // sum(AD) wins; when many reads are not allele-counted (e.g. ambiguous/
-                // supplementary), DP wins. Mirrors the same max() used for Strelka TAR/TIR.
                 let ad_total: u32 = raw.iter().filter_map(|v| v.parse::<u32>().ok()).sum();
-                let total = match (dp, ad_total) {
-                    (Some(d), a) if a > 0 => Some(d.max(a)),
-                    (Some(d), _) => Some(d),
-                    (None, a) if a > 0 => Some(a),
-                    (None, _) => None,
-                };
+                // Both slots exist as long as the AD array reaches the selected ALT;
+                // "." entries count as present (vcf2maf.pl tests `defined`, not numeric).
+                let slots_defined = alt_vcf_idx < raw.len();
                 return AlleleDepth {
                     ref_count,
                     alt_count,
-                    total_depth: total,
+                    total_depth: fix_total_depth(ref_count, alt_count, dp, ad_total, slots_defined),
                 };
             }
         }
@@ -92,7 +121,7 @@ pub fn extract_depth<F: AsRef<str>>(
             return AlleleDepth {
                 ref_count: Some(r),
                 alt_count: Some(a),
-                total_depth: dp.or(Some(r + a)),
+                total_depth: fix_total_depth(Some(r), Some(a), dp, r + a, true),
             };
         }
     }
@@ -119,30 +148,27 @@ pub fn extract_depth<F: AsRef<str>>(
         };
         let ref_count = get(base_key(ref_base)).and_then(first_num);
         let alt_count = get(base_key(alt_base)).and_then(first_num);
+        // vcf2maf.pl sums the per-allele base counts across all alleles; for the
+        // bi-allelic SNVs Strelka emits that is exactly ref+alt.
+        let sum = ref_count.unwrap_or(0) + alt_count.unwrap_or(0);
         return AlleleDepth {
             ref_count,
             alt_count,
-            total_depth: dp,
+            total_depth: fix_total_depth(ref_count, alt_count, dp, sum, true),
         };
     }
 
-    // 4. Strelka indels: TAR (ref), TIR (alt)
-    // vcf2maf.pl uses max(DP, TAR[0]+TIR[0]) for total depth, because TAR/TIR count
-    // reads at a specific indel tier that can exceed the DP-field count.
+    // 4. Strelka indels: TAR (ref), TIR (alt).
+    // TAR/TIR count reads at a specific indel tier, which can exceed the DP field —
+    // the sanity check then rebuilds the total from TAR[0]+TIR[0].
     if get("TAR").is_some() || get("TIR").is_some() {
         let ref_count = get("TAR").and_then(first_num);
         let alt_count = get("TIR").and_then(first_num);
-        let sum_tar_tir = ref_count.zip(alt_count).map(|(r, a)| r + a);
-        let total = match (dp, sum_tar_tir) {
-            (Some(d), Some(s)) => Some(d.max(s)),
-            (Some(d), None) => Some(d),
-            (None, Some(s)) => Some(s),
-            (None, None) => None,
-        };
+        let sum = ref_count.unwrap_or(0) + alt_count.unwrap_or(0);
         return AlleleDepth {
             ref_count,
             alt_count,
-            total_depth: total,
+            total_depth: fix_total_depth(ref_count, alt_count, dp, sum, true),
         };
     }
 
@@ -178,18 +204,11 @@ pub fn extract_depth<F: AsRef<str>>(
                         .copied()
                 };
                 let alt_count = bc_parts.get(idx_for(alt_base)).copied();
-                let dp4_total = get("DP4").and_then(|dp4| {
-                    let p: Vec<u32> = dp4.split(',').filter_map(|v| v.parse().ok()).collect();
-                    if p.len() == 4 {
-                        Some(p.iter().sum())
-                    } else {
-                        None
-                    }
-                });
+                let sum = ref_count.unwrap_or(0) + alt_count.unwrap_or(0);
                 return AlleleDepth {
                     ref_count,
                     alt_count,
-                    total_depth: dp.or(dp4_total).or(Some(bc_parts.iter().sum())),
+                    total_depth: fix_total_depth(ref_count, alt_count, dp, sum, true),
                 };
             }
         }
@@ -202,7 +221,13 @@ pub fn extract_depth<F: AsRef<str>>(
                 return AlleleDepth {
                     ref_count: Some(ref_count),
                     alt_count: Some(alt_count),
-                    total_depth: dp.or(Some(ref_count + alt_count)),
+                    total_depth: fix_total_depth(
+                        Some(ref_count),
+                        Some(alt_count),
+                        dp,
+                        ref_count + alt_count,
+                        true,
+                    ),
                 };
             }
         }
@@ -218,10 +243,19 @@ pub fn extract_depth<F: AsRef<str>>(
             .split(',')
             .nth(alt_vcf_idx.saturating_sub(1))
             .and_then(|v| v.parse().ok());
+        // vcf2maf.pl's depth array here is (RO, AO...), so the sum spans every ALT.
+        let ao_total: u32 = ao.split(',').filter_map(|v| v.parse::<u32>().ok()).sum();
+        let slots_defined = alt_vcf_idx.saturating_sub(1) < ao.split(',').count();
         return AlleleDepth {
             ref_count,
             alt_count,
-            total_depth: dp,
+            total_depth: fix_total_depth(
+                ref_count,
+                alt_count,
+                dp,
+                ref_count.unwrap_or(0) + ao_total,
+                slots_defined,
+            ),
         };
     }
 
@@ -248,10 +282,11 @@ pub fn extract_depth<F: AsRef<str>>(
                 parts.get(idx_for(ref_char.to_ascii_uppercase())).copied()
             };
             let alt_count = parts.get(idx_for(alt_base)).copied();
+            let sum = ref_count.unwrap_or(0) + alt_count.unwrap_or(0);
             return AlleleDepth {
                 ref_count,
                 alt_count,
-                total_depth: dp.or(Some(parts.iter().sum())),
+                total_depth: fix_total_depth(ref_count, alt_count, dp, sum, true),
             };
         }
     }
@@ -279,22 +314,56 @@ mod tests {
     }
 
     #[test]
-    fn ad_max_dp_adsum() {
-        // GIAB NIST v4.2.1: sum(AD)=174 > DP=157 → max wins → 174.
+    fn ad_sum_replaces_inconsistent_dp() {
+        // GIAB NIST v4.2.1: ref+alt = 174 > DP = 157, so DP is rebuilt from sum(AD).
         let keys = vec!["GT", "PS", "DP", "ADALL", "AD", "GQ"];
         let vals = vec!["1/1", ".", "157", "0,70", "87,87", "237"];
         let d = extract_depth(&keys, &vals, "T", "C", 1, false);
         assert_eq!(d.ref_count, Some(87));
         assert_eq!(d.alt_count, Some(87));
-        assert_eq!(d.total_depth, Some(174)); // max(157, 87+87) = 174
+        assert_eq!(d.total_depth, Some(174));
 
-        // DP=652 > sum(AD)=82 → max wins → 652.
-        let keys2 = vec!["GT", "PS", "DP", "ADALL", "AD", "GQ"];
+        // ref+alt = 82 fits inside DP = 652 → DP is reported as-is. The ref depth of 0
+        // must not participate in the comparisons (Perl truthiness).
         let vals2 = vec!["1/1", ".", "652", "16,234", "0,82", "312"];
-        let d2 = extract_depth(&keys2, &vals2, "A", "G", 1, false);
+        let d2 = extract_depth(&keys, &vals2, "A", "G", 1, false);
         assert_eq!(d2.ref_count, Some(0));
         assert_eq!(d2.alt_count, Some(82));
-        assert_eq!(d2.total_depth, Some(652)); // max(652, 0+82) = 652
+        assert_eq!(d2.total_depth, Some(652));
+    }
+
+    #[test]
+    fn multiallelic_other_alt_depth_does_not_inflate_dp() {
+        // The selected REF/ALT pair (10+5) fits inside DP=100, so DP stands even though
+        // the untouched third allele pushes sum(AD) to 215. A plain max(DP, sum(AD))
+        // would wrongly report 215 here.
+        let keys = vec!["GT", "AD", "DP"];
+        let vals = vec!["0/1", "10,5,200", "100"];
+        let d = extract_depth(&keys, &vals, "A", "G", 1, false);
+        assert_eq!(d.total_depth, Some(100));
+
+        // Selecting the deep third allele does trip the check, and then the total comes
+        // from the whole AD array, as in vcf2maf.pl.
+        let d2 = extract_depth(&keys, &vals, "A", "T", 2, false);
+        assert_eq!(d2.alt_count, Some(200));
+        assert_eq!(d2.total_depth, Some(215));
+    }
+
+    #[test]
+    fn missing_dp_falls_back_to_ad_sum() {
+        let keys = vec!["GT", "AD", "DP"];
+        let vals = vec!["0/1", "45,12", "."];
+        let d = extract_depth(&keys, &vals, "A", "T", 1, false);
+        assert_eq!(d.total_depth, Some(57));
+    }
+
+    #[test]
+    fn varscan_dp_rebuilt_when_below_allele_depths() {
+        // VarScan DP can exclude reads that RD/AD count; vcf2maf.pl then uses RD+AD.
+        let keys = vec!["GT", "RD", "AD", "DP"];
+        let vals = vec!["0/1", "30", "20", "40"];
+        let d = extract_depth(&keys, &vals, "A", "T", 1, false);
+        assert_eq!(d.total_depth, Some(50));
     }
 
     #[test]
